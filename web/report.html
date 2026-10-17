@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<title>個股報告</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65;
+    --line: #e4e2db; --grid: #ecebe5;
+    --up: #d1342c; --down: #1a8a4a; --warn: #c27c0e; --neutral: #5b6b7a; --star: #e0a400;
+    --ma5: #e08a1e; --ma20: #2f6fd6; --ma60: #8a4fc7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9c9a92;
+      --line: #2e2d2a; --grid: #2a2926;
+      --up: #f0574e; --down: #3cbf72; --warn: #e8a53a; --neutral: #8fa1b3; --star: #f2c23a;
+      --ma5: #f0a34a; --ma20: #5b92ec; --ma60: #b07fe6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.6;
+         font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 12px 16px 48px; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .back { color: var(--muted); text-decoration: none; font-size: 15px; padding: 6px 0; }
+  .back:hover { color: var(--ink); }
+  .star { border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; font-size: 14px;
+          border-radius: 99px; padding: 5px 14px; cursor: pointer; }
+  .star.on { color: var(--star); border-color: var(--star); font-weight: 600; }
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .ticker { color: var(--muted); font-size: 14px; letter-spacing: .04em; }
+  h1 { margin: 2px 0 0; font-size: 26px; font-weight: 700; }
+  .price { text-align: right; }
+  .price .big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price .chg { font-size: 16px; font-weight: 600; margin-left: 8px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .meta { color: var(--muted); font-size: 13px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .num { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 20px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .card { border: 1px solid var(--line); border-left: 4px solid var(--neutral); border-radius: 8px; padding: 12px 14px; }
+  .card.tone-up { border-left-color: var(--up); }
+  .card.tone-down { border-left-color: var(--down); }
+  .card.tone-warn { border-left-color: var(--warn); }
+  .card-head { display: flex; justify-content: space-between; align-items: center; }
+  .card-title { font-size: 13px; color: var(--muted); }
+  .tag { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--grid); color: var(--muted); }
+  .tone-up .tag { color: var(--up); } .tone-down .tag { color: var(--down); } .tone-warn .tag { color: var(--warn); }
+  .card-value { font-size: 17px; font-weight: 700; margin: 4px 0 6px; font-variant-numeric: tabular-nums; }
+  .card p { margin: 0; font-size: 14px; opacity: .85; }
+
+  .chart { width: 100%; }
+  #price { height: 520px; } #ind { height: 380px; } #bt { height: 300px; }
+
+  .seg-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 8px 0; margin-bottom: 12px; }
+  .seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+                padding: 8px 0; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--ink); color: var(--bg); font-weight: 600; }
+
+  .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .lg i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .lg i.box { width: 9px; height: 9px; border-radius: 2px; }
+  .lg i.dot { background: none; border-top: 2px dotted; height: 0; }
+  .sub { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+  .bt-sum { display: flex; gap: 10px; margin: 0 0 8px; }
+  .bt-sum div { flex: 1; background: var(--grid); border-radius: 8px; padding: 8px 10px; }
+  .bt-sum .label { font-size: 12px; color: var(--muted); }
+  .bt-sum .num { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  details { border-top: 1px solid var(--line); padding: 10px 0; }
+  details:first-of-type { border-top: none; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { margin: 8px 0 0; font-size: 14px; opacity: .85; }
+
+  .msg { text-align: center; color: var(--muted); padding: 60px 16px; }
+  .msg a { color: inherit; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 8px; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 8px 12px 40px; }
+    header { gap: 6px; margin-bottom: 14px; }
+    h1 { font-size: 22px; }
+    .price { text-align: left; }
+    .price .big { font-size: 30px; }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .stat { padding: 10px; }
+    .stat .num { font-size: 16px; }
+    section { padding: 14px 12px; border-radius: 10px; margin-bottom: 14px; }
+    .cards { grid-template-columns: 1fr; gap: 10px; }
+    .card-value { font-size: 16px; }
+    #price { height: 400px; } #ind { height: 300px; } #bt { height: 240px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="index.html">← 搜尋</a>
+    <button class="star" id="star" hidden>☆ 加入自選</button>
+  </div>
+  <div id="msg" class="msg">載入中…</div>
+
+  <div id="main" hidden>
+    <header>
+      <div>
+        <div class="ticker" id="ticker"></div>
+        <h1 id="name"></h1>
+        <div class="meta" id="range"></div>
+      </div>
+      <div class="price">
+        <span class="big" id="close"></span><span class="chg" id="daychg"></span>
+        <div class="meta">最新收盤價（元）與當日漲跌</div>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="label">期間漲跌幅</div><div class="num" id="pchg"></div></div>
+      <div class="stat"><div class="label">期間最高</div><div class="num" id="high"></div></div>
+      <div class="stat"><div class="label">期間最低</div><div class="num" id="low"></div></div>
+    </div>
+
+    <section>
+      <h2>白話分析</h2>
+      <p class="hint">左邊色條：紅 = 偏多、綠 = 偏空、橘 = 需要留意、灰 = 中性（台股習慣紅漲綠跌）</p>
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <div class="seg-bar">
+      <div class="seg" id="seg">
+        <button data-n="21">1 個月</button><button data-n="63">3 個月</button>
+        <button data-n="126">6 個月</button><button data-n="100000">全部</button>
+      </div>
+    </div>
+
+    <section>
+      <h2>股價與均線</h2>
+      <p class="hint">點一下圖（電腦用滑鼠移上去）可以看當天的數字。上方按鈕切換要看多久。</p>
+      <div class="lg">
+        <span><i class="box" style="background:var(--up)"></i>漲</span>
+        <span><i class="box" style="background:var(--down)"></i>跌</span>
+        <span><i style="background:var(--ma5)"></i>MA5 週線</span>
+        <span><i style="background:var(--ma20)"></i>MA20 月線</span>
+        <span><i style="background:var(--ma60)"></i>MA60 季線</span>
+      </div>
+      <div id="price" class="chart"></div>
+      <div class="sub">下方柱狀：成交量（張）</div>
+    </section>
+
+    <section>
+      <h2>RSI 與 KD</h2>
+      <p class="hint">RSI 超過 70 偏熱、低於 30 偏冷；KD 超過 80 偏熱、低於 20 偏冷。</p>
+      <div class="lg">
+        <span><i style="background:var(--ma60)"></i>RSI</span>
+        <span><i style="background:var(--ma5)"></i>K</span>
+        <span><i style="background:var(--ma20)"></i>D</span>
+      </div>
+      <div id="ind" class="chart"></div>
+    </section>
+
+    <section>
+      <h2>小回測：均線策略 vs 買進持有</h2>
+      <p class="hint">策略規則：週線(MA5)在月線(MA20)上方就持有，否則空手。從所選期間的第一天開始算，未計手續費與交易稅。</p>
+      <div class="bt-sum">
+        <div><div class="label">均線策略</div><div class="num" id="bt-s">—</div></div>
+        <div><div class="label">買進持有</div><div class="num" id="bt-h">—</div></div>
+      </div>
+      <div class="lg">
+        <span><i style="background:var(--ma20)"></i>均線策略</span>
+        <span><i class="dot" style="border-color:var(--muted)"></i>買進持有</span>
+      </div>
+      <div id="bt" class="chart"></div>
+    </section>
+
+    <section>
+      <h2>名詞小教室</h2>
+      <details><summary>K 線（蠟燭圖）</summary>
+        <p>每一根代表一天。實體的上下兩端是開盤價與收盤價，細線的頂端是最高價、底端是最低價。紅色代表收盤比開盤高（漲），綠色代表收盤比開盤低（跌）。</p></details>
+      <details><summary>均線 MA</summary>
+        <p>過去 N 天收盤價的平均。MA5 約一週、MA20 約一個月、MA60 約一季。可以把均線想成「最近這段時間大家的平均買進成本」。</p></details>
+      <details><summary>RSI 相對強弱指標</summary>
+        <p>比較最近 14 天上漲和下跌的力道，數值在 0~100。數字越高代表最近漲得越兇。它只說明「漲多了」或「跌多了」，不代表一定會反轉。</p></details>
+      <details><summary>KD 隨機指標</summary>
+        <p>看今天收盤價落在最近 9 天高低區間的哪個位置。K 線比較敏感、D 線比較平滑。K 由下往上穿過 D 叫黃金交叉，反過來叫死亡交叉。在台灣很常用，但盤整時容易反覆出現假訊號。</p></details>
+      <details><summary>成交量</summary>
+        <p>當天成交了多少張（1 張 = 1000 股）。量代表市場的關注度，「價漲量增」通常比「價漲量縮」更健康。</p></details>
+      <details><summary>波動度與最大回檔</summary>
+        <p>波動度是股價每天漲跌幅度換算成一年的數字，越大代表越刺激也越危險。最大回檔是從期間最高點往下跌的最大幅度，用來想像最壞情況。</p></details>
+      <details><summary>回測</summary>
+        <p>把一套買賣規則套用到過去的資料，看看會賺還是賠。過去有效不代表未來有效，而且真實交易還有手續費、交易稅和滑價。</p></details>
+    </section>
+
+    <footer id="foot"></footer>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const code = (new URLSearchParams(location.search).get('code') || '').trim().toUpperCase();
+const fmtPct = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+const sign = (v) => v >= 0 ? 'up' : 'down';
+
+// ---------- 自選股（記在這支手機 / 電腦上）----------
+function loadWatch(defaults) {
+  try { const v = JSON.parse(localStorage.getItem('watch')); if (Array.isArray(v)) return v; } catch (e) {}
+  return defaults || [];
+}
+function saveWatch(list) { try { localStorage.setItem('watch', JSON.stringify(list)); } catch (e) {} }
+function setupStar(defaults) {
+  const btn = $('star');
+  const paint = () => {
+    const on = loadWatch(defaults).includes(code);
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? '★ 已加入自選' : '☆ 加入自選';
+  };
+  btn.addEventListener('click', () => {
+    const w = loadWatch(defaults);
+    const i = w.indexOf(code);
+    if (i >= 0) w.splice(i, 1); else w.push(code);
+    saveWatch(w); paint();
+  });
+  btn.hidden = false; paint();
+}
+
+// ---------- 載入資料 ----------
+if (!code) {
+  $('msg').innerHTML = '沒有指定股票。<br><a href="index.html">回到搜尋</a>';
+} else {
+  Promise.all([
+    fetch(`data/${encodeURIComponent(code)}.json`, { cache: 'no-cache' }).then(r => { if (!r.ok) throw 404; return r.json(); }),
+    fetch('list.json', { cache: 'no-cache' }).then(r => r.json()).catch(() => ({ watch: [] })),
+  ]).then(([R, L]) => { setupStar(L.watch); show(R); })
+    .catch(() => { $('msg').innerHTML = `找不到「${code.replace(/[<>&]/g, '')}」的資料。<br>可能是代號錯誤、新上市或暫停交易。<br><br><a href="index.html">回到搜尋</a>`; });
+}
+
+function show(R) {
+  document.title = `${R.code} ${R.name}｜台股學習站`;
+  $('ticker').textContent = `${R.code} ・ ${R.market}`;
+  $('name').textContent = R.name;
+  const dates = R.d.dates;
+  $('range').textContent = `資料期間 ${dates[0]} ～ ${dates[dates.length - 1]}`;
+  $('close').textContent = R.close.toFixed(2);
+  $('daychg').textContent = fmtPct(R.day_chg); $('daychg').className = 'chg ' + sign(R.day_chg);
+  $('pchg').textContent = (R.period_chg >= 0 ? '+' : '') + R.period_chg.toFixed(1) + '%';
+  $('pchg').className = 'num ' + sign(R.period_chg);
+  $('high').textContent = R.high.toFixed(2);
+  $('low').textContent = R.low.toFixed(2);
+  $('foot').textContent = `更新時間 ${R.updated}（台北時間）・ 資料來源 Yahoo Finance ・ 僅供學習參考，不構成投資建議`;
+
+  const label = { up: '偏多', down: '偏空', neutral: '中性', warn: '留意' };
+  const box = $('cards');
+  R.cards.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'card tone-' + c.tone;
+    el.innerHTML = '<div class="card-head"><span class="card-title"></span><span class="tag"></span></div><div class="card-value"></div><p></p>';
+    el.querySelector('.card-title').textContent = c.title;
+    el.querySelector('.tag').textContent = label[c.tone];
+    el.querySelector('.card-value').textContent = c.value;
+    el.querySelector('p').textContent = c.text;
+    box.appendChild(el);
+  });
+
+  $('msg').hidden = true; $('main').hidden = false;
+  setupCharts(R);
+}
+
+// ---------- 圖表 ----------
+function setupCharts(R) {
+  const D = R.d;
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  const C = { muted: v('--muted'), grid: v('--grid'), up: v('--up'), down: v('--down'),
+              ma5: v('--ma5'), ma20: v('--ma20'), ma60: v('--ma60') };
+  const mobile = window.matchMedia('(max-width: 640px)').matches;
+  const font = { family: '-apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif', color: C.muted, size: mobile ? 11 : 12 };
+
+  // 日期標籤：短期間顯示「月/日」，長期間顯示「年/月」
+  const shortDate = (d, long) => long ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/');
+  const xaxis = (x) => {
+    const want = mobile ? 4 : 7, step = Math.max(1, Math.ceil(x.length / want)), long = x.length > 140;
+    const off = Math.floor(step / 2);  // 第一個標籤往內縮，避免被左邊切掉
+    const vals = x.filter((_, i) => i % step === off);
+    return { type: 'category', tickvals: vals, ticktext: vals.map(d => shortDate(d, long)), tickangle: 0,
+             showgrid: false, linecolor: C.grid, tickfont: font, rangeslider: { visible: false }, fixedrange: true,
+             showspikes: true, spikemode: 'across', spikethickness: 1, spikecolor: C.muted, spikedash: 'dot' };
+  };
+  const yax = (extra) => Object.assign({ gridcolor: C.grid, zeroline: false, tickfont: font, side: 'right',
+                                         fixedrange: true, automargin: true, nticks: mobile ? 5 : 7 }, extra);
+  const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false,
+                 margin: mobile ? { l: 2, r: 6, t: 6, b: 24 } : { l: 6, r: 10, t: 8, b: 28 },
+                 hovermode: 'x unified', dragmode: false,
+                 hoverlabel: { font: { size: mobile ? 12 : 13 }, namelength: -1 } };
+  // 不顯示工具列、不攔截捲動：手機上滑過圖表可以正常往下捲
+  const cfg = { responsive: true, displayModeBar: false, scrollZoom: false };
+  const hline = (y, color, yref) => ({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: y, y1: y, yref,
+                                      line: { color, width: 1, dash: 'dash' } });
+
+  function render(n) {
+    const N = D.dates.length, s = Math.max(0, N - n);
+    const cut = (a) => a.slice(s);
+    const x = cut(D.dates);
+    const ohlc = x.map((_, i) => `開 ${D.open[s+i]}　高 ${D.high[s+i]}<br>低 ${D.low[s+i]}　收 ${D.close[s+i]}`);
+
+    Plotly.react('price', [
+      { type: 'candlestick', name: 'K線', x, open: cut(D.open), high: cut(D.high), low: cut(D.low), close: cut(D.close),
+        text: ohlc, hoverinfo: 'text',
+        increasing: { line: { color: C.up, width: 1 }, fillcolor: C.up },
+        decreasing: { line: { color: C.down, width: 1 }, fillcolor: C.down } },
+      { type: 'scatter', mode: 'lines', name: 'MA5', x, y: cut(D.ma5), line: { color: C.ma5, width: 1.3 }, hovertemplate: '%{y:.2f}' },
+      { type: 'scatter', mode: 'lines', name: 'MA20', x, y: cut(D.ma20), line: { color: C.ma20, width: 1.5 }, hovertemplate: '%{y:.2f}' },
+      { type: 'scatter', mode: 'lines', name: 'MA60', x, y: cut(D.ma60), line: { color: C.ma60, width: 1.5 }, hovertemplate: '%{y:.2f}' },
+      { type: 'bar', name: '量', x, y: cut(D.lots), yaxis: 'y2', hovertemplate: '%{y:,.0f} 張',
+        marker: { color: cut(D.up).map(u => u ? C.up : C.down), opacity: 0.55 } },
+    ], Object.assign({}, base, {
+      xaxis: xaxis(x), yaxis: yax({ domain: [0.25, 1] }),
+      yaxis2: yax({ domain: [0, 0.19], showgrid: false, nticks: 3, tickformat: '~s' }),
+    }), cfg);
+
+    Plotly.react('ind', [
+      { type: 'scatter', mode: 'lines', name: 'RSI', x, y: cut(D.rsi), line: { color: C.ma60, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+      { type: 'scatter', mode: 'lines', name: 'K', x, y: cut(D.k), yaxis: 'y2', line: { color: C.ma5, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+      { type: 'scatter', mode: 'lines', name: 'D', x, y: cut(D.d), yaxis: 'y2', line: { color: C.ma20, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+    ], Object.assign({}, base, {
+      xaxis: xaxis(x),
+      yaxis: yax({ domain: [0.56, 1], range: [0, 100], tickvals: [30, 70] }),
+      yaxis2: yax({ domain: [0, 0.44], range: [0, 100], tickvals: [20, 80] }),
+      shapes: [hline(70, C.up, 'y'), hline(30, C.down, 'y'), hline(80, C.up, 'y2'), hline(20, C.down, 'y2')],
+      annotations: [
+        { text: 'RSI', xref: 'paper', yref: 'paper', x: 0, y: 1, xanchor: 'left', yanchor: 'top', showarrow: false, font },
+        { text: 'KD', xref: 'paper', yref: 'paper', x: 0, y: 0.44, xanchor: 'left', yanchor: 'top', showarrow: false, font },
+      ],
+    }), cfg);
+
+    // 回測：從所選期間的第一天重新起算
+    const B = R.bt;
+    if (!B.strat.length) { $('bt-s').textContent = $('bt-h').textContent = '資料不足'; return; }
+    const off = Math.max(0, s - B.start);
+    const rebase = (arr) => { const b0 = 1 + arr[off] / 100; return arr.slice(off).map(v => +(((1 + v / 100) / b0 - 1) * 100).toFixed(2)); };
+    const bx = D.dates.slice(B.start + off), st = rebase(B.strat), ho = rebase(B.hold);
+    const setNum = (id, val) => { const el = $(id); el.textContent = (val >= 0 ? '+' : '') + val.toFixed(1) + '%'; el.className = 'num ' + sign(val); };
+    setNum('bt-s', st[st.length - 1]); setNum('bt-h', ho[ho.length - 1]);
+    Plotly.react('bt', [
+      { type: 'scatter', mode: 'lines', name: '均線策略', x: bx, y: st, line: { color: C.ma20, width: 2 }, hovertemplate: '%{y:+.1f}%' },
+      { type: 'scatter', mode: 'lines', name: '買進持有', x: bx, y: ho, line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '%{y:+.1f}%' },
+    ], Object.assign({}, base, {
+      xaxis: xaxis(bx), yaxis: yax({ ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }),
+    }), cfg);
+  }
+
+  // 期間按鈕：手機預設 3 個月（K 線才看得清楚），電腦預設全部
+  const buttons = document.querySelectorAll('#seg button');
+  const choose = (btn) => { buttons.forEach(b => b.classList.toggle('on', b === btn)); render(+btn.dataset.n); };
+  buttons.forEach(b => b.addEventListener('click', () => choose(b)));
+  choose(buttons[mobile ? 1 : 3]);
+}
+</script>
+</body>
+</html>

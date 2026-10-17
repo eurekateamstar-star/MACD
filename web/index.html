@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<title>台股學習站</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65; --line: #e4e2db; --soft: #efeee8;
+    --up: #d1342c; --down: #1a8a4a; --warn: #c27c0e; --accent: #2f6fd6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9c9a92; --line: #2e2d2a; --soft: #2a2926;
+      --up: #f0574e; --down: #3cbf72; --warn: #e8a53a; --accent: #5b92ec;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
+         font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; margin: 2px 0 14px; }
+
+  .search-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 8px 0 12px; }
+  .search { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line);
+            border-radius: 12px; padding: 0 12px; }
+  .search:focus-within { border-color: var(--accent); }
+  .search svg { flex: none; color: var(--muted); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink);
+                  font: inherit; font-size: 17px; padding: 13px 0; }
+  .search input::placeholder { color: var(--muted); }
+  .search input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+  .clear { border: 0; background: var(--soft); color: var(--muted); width: 24px; height: 24px; border-radius: 50%;
+           font-size: 15px; line-height: 24px; padding: 0; cursor: pointer; display: none; }
+
+  h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 8px 4px 8px; display: flex; justify-content: space-between; }
+  h2 small { font-weight: 400; font-size: 13px; }
+  .list { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px;
+         padding: 12px 14px; border-top: 1px solid var(--line); color: inherit; text-decoration: none; }
+  .row:first-child { border-top: none; }
+  a.row:active, a.row:hover { background: var(--soft); }
+  .who { min-width: 0; }
+  .name { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  .tag { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--soft); color: var(--muted); }
+  .tag.up { color: var(--up); } .tag.down { color: var(--down); }
+  .px { text-align: right; font-variant-numeric: tabular-nums; }
+  .close { font-weight: 700; font-size: 16px; }
+  .chg { display: block; font-size: 13px; font-weight: 600; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .empty { padding: 20px 16px; color: var(--muted); font-size: 14px; text-align: center; }
+  mark { background: none; color: var(--accent); }
+  .note { color: var(--muted); font-size: 13px; margin: 14px 4px 0; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>台股學習站</h1>
+  <div class="meta" id="meta">載入中…</div>
+
+  <div class="search-bar">
+    <label class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="輸入代號或名稱，例如 2330、台積">
+      <button class="clear" id="clear" aria-label="清除">×</button>
+    </label>
+  </div>
+
+  <div id="results" hidden>
+    <h2><span>搜尋結果</span><small id="rcount"></small></h2>
+    <div class="list" id="rlist"></div>
+  </div>
+
+  <div id="home">
+    <h2><span>我的自選</span><small>在個股頁按 ☆ 加入</small></h2>
+    <div class="list" id="wlist"></div>
+    <p class="note">點任一檔看完整報告：K 線圖、均線、RSI、KD、回測與白話解釋。紅色代表上漲 / 偏多，綠色代表下跌 / 偏空。</p>
+  </div>
+
+  <footer id="foot">資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議</footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let STOCKS = [], BY_CODE = {}, LIST = null;
+
+// 自選股存在這支手機 / 電腦上；第一次用的人顯示 stocks.txt 的預設清單
+function getWatch() {
+  try { const v = JSON.parse(localStorage.getItem('watch')); if (Array.isArray(v)) return v; } catch (e) {}
+  return LIST ? LIST.watch : [];
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function hl(text, q) {
+  const t = esc(text);
+  if (!q) return t;
+  const i = text.toUpperCase().indexOf(q.toUpperCase());
+  return i < 0 ? t : esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+}
+
+function rowHTML(s, q) {
+  const [code, name, market, close, chg, trend, tone] = s;
+  const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+  const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
+  return `<a class="row" href="report.html?code=${encodeURIComponent(code)}">
+    <div class="who"><div class="name">${hl(name, q)}</div>
+      <div class="sub"><span>${hl(code, q)}</span><span class="tag">${esc(market)}</span>${trend ? `<span class="tag ${tone}">${esc(trend)}</span>` : ''}</div></div>
+    <div class="px"><span class="close">${close.toFixed(2)}</span><span class="chg ${cls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></div></a>`;
+}
+
+function search(q) {
+  q = q.trim();
+  $('clear').style.display = q ? 'block' : 'none';
+  $('results').hidden = !q; $('home').hidden = !!q;
+  if (!q) return;
+  const Q = q.toUpperCase();
+  const hits = [];
+  for (const s of STOCKS) {
+    const code = s[0], name = s[1].toUpperCase();
+    let score = -1;
+    if (code === Q) score = 0;
+    else if (code.startsWith(Q)) score = 1;
+    else if (name.startsWith(Q)) score = 2;
+    else if (name.includes(Q)) score = 3;
+    else if (code.includes(Q)) score = 4;
+    if (score >= 0) hits.push([score, s]);
+  }
+  hits.sort((a, b) => a[0] - b[0] || a[1][0].localeCompare(b[1][0]));
+  const shown = hits.slice(0, 60);
+  $('rcount').textContent = hits.length ? `${hits.length} 檔${hits.length > 60 ? '，顯示前 60 檔' : ''}` : '';
+  $('rlist').innerHTML = shown.length ? shown.map(h => rowHTML(h[1], q)).join('')
+    : `<div class="empty">找不到「${esc(q)}」<br>請確認代號，或試試輸入公司名稱</div>`;
+}
+
+function renderWatch() {
+  const w = getWatch();
+  $('wlist').innerHTML = w.length
+    ? w.map(c => BY_CODE[c] ? rowHTML(BY_CODE[c], '')
+        : `<div class="row"><div class="who"><div class="name">${esc(c)}</div><div class="sub">這次沒有資料</div></div></div>`).join('')
+    : '<div class="empty">還沒有自選股<br>用上面的搜尋找股票，進入個股頁後按 ☆ 加入</div>';
+}
+
+$('q').addEventListener('input', (e) => search(e.target.value));
+$('q').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { const first = document.querySelector('#rlist a.row'); if (first) location.href = first.href; }
+});
+$('clear').addEventListener('click', (e) => { e.preventDefault(); $('q').value = ''; search(''); $('q').focus(); });
+window.addEventListener('pageshow', () => { if (LIST) renderWatch(); });  // 從個股頁返回時更新自選
+
+fetch('list.json', { cache: 'no-cache' }).then(r => r.json()).then(data => {
+  LIST = data; STOCKS = data.stocks;
+  STOCKS.forEach(s => BY_CODE[s[0]] = s);
+  $('meta').textContent = `共 ${STOCKS.length} 檔 ・ 資料日期 ${data.date} ・ 收盤後自動更新`;
+  $('foot').textContent = `更新時間 ${data.updated}（台北時間）・ 資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議`;
+  renderWatch();
+  if ($('q').value) search($('q').value);
+}).catch(() => {
+  $('meta').textContent = '資料載入失敗，請稍後重新整理';
+});
+</script>
+</body>
+</html>
