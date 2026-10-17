@@ -354,15 +354,43 @@ HTML_TEMPLATE = r"""<!doctype html>
   .chart { width: 100%; }
   #price { height: 520px; } #ind { height: 380px; } #bt { height: 300px; }
 
+  /* 圖表期間切換（捲動時黏在畫面上方） */
+  .seg-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 8px 0; margin-bottom: 12px; }
+  .seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+                padding: 8px 0; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--ink); color: var(--bg); font-weight: 600; }
+
+  /* 圖例 */
+  .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .lg i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .lg i.box { width: 9px; height: 9px; border-radius: 2px; }
+  .lg i.dot { background: none; border-top: 2px dotted; height: 0; }
+  .sub { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+  .bt-sum { display: flex; gap: 10px; margin: 0 0 8px; }
+  .bt-sum div { flex: 1; background: var(--grid); border-radius: 8px; padding: 8px 10px; }
+  .bt-sum .label { font-size: 12px; color: var(--muted); }
+  .bt-sum .num { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
   details { border-top: 1px solid var(--line); padding: 10px 0; }
   details:first-of-type { border-top: none; }
   summary { cursor: pointer; font-weight: 600; }
   details p { margin: 8px 0 0; font-size: 14px; color: var(--ink); opacity: .85; }
 
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 8px; }
-  @media (max-width: 600px) {
+  @media (max-width: 640px) {
+    .wrap { padding: 8px 12px 40px; }
+    header { gap: 6px; margin-bottom: 14px; }
+    h1 { font-size: 22px; }
     .price { text-align: left; }
-    #price { height: 440px; } #ind { height: 340px; }
+    .price .big { font-size: 30px; }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .stat { padding: 10px; }
+    .stat .num { font-size: 16px; }
+    section { padding: 14px 12px; border-radius: 10px; margin-bottom: 14px; }
+    .cards { grid-template-columns: 1fr; gap: 10px; }
+    .card-value { font-size: 16px; }
+    #price { height: 400px; } #ind { height: 300px; } #bt { height: 240px; }
   }
 </style>
 </head>
@@ -395,21 +423,49 @@ __CARDS__
     </div>
   </section>
 
+  <div class="seg-bar">
+    <div class="seg" id="seg">
+      <button data-n="21">1 個月</button><button data-n="63">3 個月</button>
+      <button data-n="126">6 個月</button><button data-n="100000">全部</button>
+    </div>
+  </div>
+
   <section>
     <h2>股價與均線</h2>
-    <p class="hint">滑鼠移到圖上看每天的數字；拖曳可以放大，雙擊恢復。下方柱狀是成交量（張）。</p>
+    <p class="hint">點一下圖（電腦用滑鼠移上去）可以看當天的數字。上方按鈕切換要看多久。</p>
+    <div class="lg">
+      <span><i class="box" style="background:var(--up)"></i>漲</span>
+      <span><i class="box" style="background:var(--down)"></i>跌</span>
+      <span><i style="background:var(--ma5)"></i>MA5 週線</span>
+      <span><i style="background:var(--ma20)"></i>MA20 月線</span>
+      <span><i style="background:var(--ma60)"></i>MA60 季線</span>
+    </div>
     <div id="price" class="chart"></div>
+    <div class="sub">下方柱狀：成交量（張）</div>
   </section>
 
   <section>
     <h2>RSI 與 KD</h2>
     <p class="hint">RSI 超過 70 偏熱、低於 30 偏冷；KD 超過 80 偏熱、低於 20 偏冷。</p>
+    <div class="lg">
+      <span><i style="background:var(--ma60)"></i>RSI</span>
+      <span><i style="background:var(--ma5)"></i>K</span>
+      <span><i style="background:var(--ma20)"></i>D</span>
+    </div>
     <div id="ind" class="chart"></div>
   </section>
 
   <section>
     <h2>小回測：均線策略 vs 買進持有</h2>
-    <p class="hint">策略規則：週線(MA5)在月線(MA20)上方就持有，否則空手。縱軸是累積報酬率。</p>
+    <p class="hint">策略規則：週線(MA5)在月線(MA20)上方就持有，否則空手。從所選期間的第一天開始算。</p>
+    <div class="bt-sum">
+      <div><div class="label">均線策略</div><div class="num" id="bt-s">—</div></div>
+      <div><div class="label">買進持有</div><div class="num" id="bt-h">—</div></div>
+    </div>
+    <div class="lg">
+      <span><i style="background:var(--ma20)"></i>均線策略</span>
+      <span><i class="dot" style="border-color:var(--muted)"></i>買進持有</span>
+    </div>
     <div id="bt" class="chart"></div>
   </section>
 
@@ -440,49 +496,92 @@ const css = getComputedStyle(document.documentElement);
 const v = (n) => css.getPropertyValue(n).trim();
 const C = { ink: v('--ink'), muted: v('--muted'), grid: v('--grid'), up: v('--up'), down: v('--down'),
             ma5: v('--ma5'), ma20: v('--ma20'), ma60: v('--ma60'), warn: v('--warn'), neutral: v('--neutral') };
-const font = { family: '-apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif', color: C.muted, size: 12 };
-const xaxis = { type: 'category', nticks: 8, showgrid: false, linecolor: C.grid, tickfont: font,
-                rangeslider: { visible: false }, showspikes: true, spikemode: 'across', spikethickness: 1, spikecolor: C.muted, spikedash: 'dot' };
-const yax = (extra) => Object.assign({ gridcolor: C.grid, zeroline: false, tickfont: font, side: 'right' }, extra);
-const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font,
-               margin: { l: 10, r: 55, t: 30, b: 30 }, hovermode: 'x unified', dragmode: 'zoom',
-               legend: { orientation: 'h', x: 0, y: 1.08, font } };
-const cfg = { responsive: true, displaylogo: false,
-              modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d', 'toggleSpikelines'] };
+const mobile = window.matchMedia('(max-width: 640px)').matches;
+const font = { family: '-apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif', color: C.muted, size: mobile ? 11 : 12 };
+
+// 日期標籤：短期間顯示「月/日」，長期間顯示「年/月」
+const shortDate = (d, long) => long ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/');
+const xaxis = (x) => {
+  const want = mobile ? 4 : 7, step = Math.max(1, Math.ceil(x.length / want)), long = x.length > 140;
+  const off = Math.floor(step / 2);  // 第一個標籤往內縮，避免被左邊切掉
+  const vals = x.filter((_, i) => i % step === off);
+  return { type: 'category', tickvals: vals, ticktext: vals.map(d => shortDate(d, long)), tickangle: 0,
+           showgrid: false, linecolor: C.grid, tickfont: font, rangeslider: { visible: false }, fixedrange: true,
+           showspikes: true, spikemode: 'across', spikethickness: 1, spikecolor: C.muted, spikedash: 'dot' };
+};
+const yax = (extra) => Object.assign({ gridcolor: C.grid, zeroline: false, tickfont: font, side: 'right',
+                                       fixedrange: true, automargin: true, nticks: mobile ? 5 : 7 }, extra);
+const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false,
+               margin: mobile ? { l: 2, r: 6, t: 6, b: 24 } : { l: 6, r: 10, t: 8, b: 28 },
+               hovermode: 'x unified', dragmode: false,
+               hoverlabel: { font: { size: mobile ? 12 : 13 }, namelength: -1 } };
+// 不顯示工具列、不攔截捲動：手機上滑過圖表可以正常往下捲
+const cfg = { responsive: true, displayModeBar: false, scrollZoom: false };
 const hline = (y, color, yref) => ({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: y, y1: y, yref,
                                     line: { color, width: 1, dash: 'dash' } });
+const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
 
-// 股價 + 均線 + 成交量
-Plotly.newPlot('price', [
-  { type: 'candlestick', name: 'K線', x: D.dates, open: D.open, high: D.high, low: D.low, close: D.close,
-    increasing: { line: { color: C.up }, fillcolor: C.up }, decreasing: { line: { color: C.down }, fillcolor: C.down } },
-  { type: 'scatter', mode: 'lines', name: 'MA5 週線', x: D.dates, y: D.ma5, line: { color: C.ma5, width: 1.3 } },
-  { type: 'scatter', mode: 'lines', name: 'MA20 月線', x: D.dates, y: D.ma20, line: { color: C.ma20, width: 1.5 } },
-  { type: 'scatter', mode: 'lines', name: 'MA60 季線', x: D.dates, y: D.ma60, line: { color: C.ma60, width: 1.5 } },
-  { type: 'bar', name: '成交量(張)', x: D.dates, y: D.lots, yaxis: 'y2',
-    marker: { color: D.volColor.map(c => c === 'up' ? C.up : C.down), opacity: 0.6 } },
-], Object.assign({}, base, {
-  xaxis, yaxis: yax({ domain: [0.27, 1] }), yaxis2: yax({ domain: [0, 0.2], showgrid: false }),
-}), cfg);
+function render(n) {
+  const N = D.dates.length, s = Math.max(0, N - n);
+  const cut = (a) => a.slice(s);
+  const x = cut(D.dates);
+  const ohlc = x.map((_, i) => `開 ${D.open[s+i]}　高 ${D.high[s+i]}<br>低 ${D.low[s+i]}　收 ${D.close[s+i]}`);
 
-// RSI + KD
-Plotly.newPlot('ind', [
-  { type: 'scatter', mode: 'lines', name: 'RSI', x: D.dates, y: D.rsi, line: { color: C.ma60, width: 1.5 } },
-  { type: 'scatter', mode: 'lines', name: 'K', x: D.dates, y: D.k, yaxis: 'y2', line: { color: C.ma5, width: 1.5 } },
-  { type: 'scatter', mode: 'lines', name: 'D', x: D.dates, y: D.d, yaxis: 'y2', line: { color: C.ma20, width: 1.5 } },
-], Object.assign({}, base, {
-  xaxis, yaxis: yax({ domain: [0.56, 1], range: [0, 100], title: { text: 'RSI', font } }),
-  yaxis2: yax({ domain: [0, 0.44], range: [0, 100], title: { text: 'KD', font } }),
-  shapes: [hline(70, C.up, 'y'), hline(30, C.down, 'y'), hline(80, C.up, 'y2'), hline(20, C.down, 'y2')],
-}), cfg);
+  // 股價 + 均線 + 成交量
+  Plotly.react('price', [
+    { type: 'candlestick', name: 'K線', x, open: cut(D.open), high: cut(D.high), low: cut(D.low), close: cut(D.close),
+      text: ohlc, hoverinfo: 'text',
+      increasing: { line: { color: C.up, width: 1 }, fillcolor: C.up },
+      decreasing: { line: { color: C.down, width: 1 }, fillcolor: C.down } },
+    { type: 'scatter', mode: 'lines', name: 'MA5', x, y: cut(D.ma5), line: { color: C.ma5, width: 1.3 }, hovertemplate: '%{y:.2f}' },
+    { type: 'scatter', mode: 'lines', name: 'MA20', x, y: cut(D.ma20), line: { color: C.ma20, width: 1.5 }, hovertemplate: '%{y:.2f}' },
+    { type: 'scatter', mode: 'lines', name: 'MA60', x, y: cut(D.ma60), line: { color: C.ma60, width: 1.5 }, hovertemplate: '%{y:.2f}' },
+    { type: 'bar', name: '量', x, y: cut(D.lots), yaxis: 'y2', hovertemplate: '%{y:,.0f} 張',
+      marker: { color: cut(D.volColor).map(c => c === 'up' ? C.up : C.down), opacity: 0.55 } },
+  ], Object.assign({}, base, {
+    xaxis: xaxis(x), yaxis: yax({ domain: [0.25, 1] }),
+    yaxis2: yax({ domain: [0, 0.19], showgrid: false, nticks: 3, tickformat: '~s' }),
+  }), cfg);
 
-// 回測
-Plotly.newPlot('bt', [
-  { type: 'scatter', mode: 'lines', name: '均線策略', x: D.bt.dates, y: D.bt.strat_curve, line: { color: C.ma20, width: 2 } },
-  { type: 'scatter', mode: 'lines', name: '買進持有', x: D.bt.dates, y: D.bt.hold_curve, line: { color: C.muted, width: 1.5, dash: 'dot' } },
-], Object.assign({}, base, {
-  xaxis, yaxis: yax({ ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }),
-}), cfg);
+  // RSI + KD
+  Plotly.react('ind', [
+    { type: 'scatter', mode: 'lines', name: 'RSI', x, y: cut(D.rsi), line: { color: C.ma60, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+    { type: 'scatter', mode: 'lines', name: 'K', x, y: cut(D.k), yaxis: 'y2', line: { color: C.ma5, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+    { type: 'scatter', mode: 'lines', name: 'D', x, y: cut(D.d), yaxis: 'y2', line: { color: C.ma20, width: 1.5 }, hovertemplate: '%{y:.1f}' },
+  ], Object.assign({}, base, {
+    xaxis: xaxis(x),
+    yaxis: yax({ domain: [0.56, 1], range: [0, 100], tickvals: [30, 70] }),
+    yaxis2: yax({ domain: [0, 0.44], range: [0, 100], tickvals: [20, 80] }),
+    shapes: [hline(70, C.up, 'y'), hline(30, C.down, 'y'), hline(80, C.up, 'y2'), hline(20, C.down, 'y2')],
+    annotations: [
+      { text: 'RSI', xref: 'paper', yref: 'paper', x: 0, y: 1, xanchor: 'left', yanchor: 'top', showarrow: false, font },
+      { text: 'KD', xref: 'paper', yref: 'paper', x: 0, y: 0.44, xanchor: 'left', yanchor: 'top', showarrow: false, font },
+    ],
+  }), cfg);
+
+  // 回測：從所選期間的第一天重新起算
+  let b = D.bt.dates.findIndex(d => d >= x[0]);
+  if (b < 0) b = 0;
+  const rebase = (arr) => { const b0 = 1 + arr[b] / 100; return arr.slice(b).map(v => +(((1 + v / 100) / b0 - 1) * 100).toFixed(2)); };
+  const bx = D.bt.dates.slice(b), st = rebase(D.bt.strat_curve), ho = rebase(D.bt.hold_curve);
+  const setNum = (id, v) => { const el = document.getElementById(id); el.textContent = fmt(v); el.className = 'num ' + (v >= 0 ? 'up' : 'down'); };
+  setNum('bt-s', st[st.length - 1]); setNum('bt-h', ho[ho.length - 1]);
+  Plotly.react('bt', [
+    { type: 'scatter', mode: 'lines', name: '均線策略', x: bx, y: st, line: { color: C.ma20, width: 2 }, hovertemplate: '%{y:+.1f}%' },
+    { type: 'scatter', mode: 'lines', name: '買進持有', x: bx, y: ho, line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '%{y:+.1f}%' },
+  ], Object.assign({}, base, {
+    xaxis: xaxis(bx), yaxis: yax({ ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }),
+  }), cfg);
+}
+
+// 期間按鈕：手機預設 3 個月（K 線才看得清楚），電腦預設全部
+const buttons = document.querySelectorAll('#seg button');
+function choose(btn) {
+  buttons.forEach(b => b.classList.toggle('on', b === btn));
+  render(+btn.dataset.n);
+}
+buttons.forEach(b => b.addEventListener('click', () => choose(b)));
+choose(buttons[mobile ? 1 : 3]);
 </script>
 </body>
 </html>
