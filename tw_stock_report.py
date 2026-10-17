@@ -392,6 +392,94 @@ def clean(series, nd=2):
     return [None if pd.isna(x) else round(float(x), nd) for x in series]
 
 
+# 智慧選股用的欄位（順序要和 screen_row() 一致；網頁 screen.html 依名稱讀取）
+SCREEN_COLS = [
+    "code", "name", "market", "ind", "flag",
+    "close", "chg", "ret5", "ret20",
+    "vol", "vr", "vma20", "amt",
+    "cap", "mcap",
+    "dif", "dea", "osc", "macd_x", "osc_up",
+    "k", "d", "j", "kd_x", "rsi",
+    "ma", "above20", "above60",
+    "nh20", "nh60", "nh240", "nh_days", "nh_streak",
+    "nl20", "nl60", "nl240", "nl_days", "nl_streak",
+    "dist_hi",
+]
+
+
+def _cross(a: pd.Series, b: pd.Series, days: int = 3) -> int:
+    """最近幾天內 a 由下往上穿過 b → 1，由上往下 → -1，沒有 → 0"""
+    x = (a - b).tail(days + 1)
+    if x.isna().any() or len(x) < 2:
+        return 0
+    for i in range(len(x) - 1, 0, -1):
+        if x.iloc[i] > 0 >= x.iloc[i - 1]:
+            return 1
+        if x.iloc[i] < 0 <= x.iloc[i - 1]:
+            return -1
+    return 0
+
+
+def _streak(flags: pd.Series) -> int:
+    n = 0
+    for v in reversed(flags.tolist()):
+        if v:
+            n += 1
+        else:
+            break
+    return n
+
+
+def screen_row(code, name, market, df, flag, profile):
+    c = df["Close"]
+    last = df.iloc[-1]
+    close = float(last["Close"])
+    n = len(c)
+
+    def r(v, nd=2):
+        return None if v is None or pd.isna(v) else round(float(v), nd)
+
+    def is_hi(w):
+        return (1 if close >= c.tail(w).max() else 0) if n >= w else None
+
+    def is_lo(w):
+        return (1 if close <= c.tail(w).min() else 0) if n >= w else None
+
+    hi60 = c >= c.rolling(60, min_periods=60).max()   # 每天是否收在 60 日新高
+    lo60 = c <= c.rolling(60, min_periods=60).min()
+    hi20 = c >= c.rolling(20, min_periods=20).max()
+    lo20 = c <= c.rolling(20, min_periods=20).min()
+    w = min(n, 240)
+    ma = (1 if last["MA5"] > last["MA20"] > last["MA60"] else -1 if last["MA5"] < last["MA20"] < last["MA60"] else 0) \
+        if ok(last["MA60"]) else None
+    cap = profile.get("cap")
+    shares = profile.get("shares")
+    osc_prev = df["OSC"].iloc[-2] if n >= 2 else None
+    return [
+        code, name, market, profile.get("ind", "") or ("ETF" if code.startswith("00") else ""), flag,
+        r(close), r((close / c.iloc[-2] - 1) * 100),
+        r((close / c.iloc[-6] - 1) * 100) if n > 5 else None,
+        r((close / c.iloc[-21] - 1) * 100) if n > 20 else None,
+        r(last["Lots"], 0),
+        r(last["Lots"] / last["LotsMA5"]) if ok(last["LotsMA5"]) and last["LotsMA5"] > 0 else None,
+        r(last["LotsMA20"], 0),
+        r(last["Lots"] * 1000 * close / 1e8),                     # 成交金額（億）
+        r(cap, 1), r(close * shares / 1e8, 0) if shares else None,  # 股本、市值（億）
+        r(last["DIF"], 3), r(last["DEA"], 3), r(last["OSC"], 3),
+        _cross(df["DIF"], df["DEA"]),
+        (1 if ok(last["OSC"]) and ok(osc_prev) and last["OSC"] > osc_prev else 0),
+        r(last["K"], 1), r(last["D"], 1), r(last["J"], 1), _cross(df["K"], df["D"]), r(last["RSI"], 1),
+        ma,
+        (1 if close > last["MA20"] else 0) if ok(last["MA20"]) else None,
+        (1 if close > last["MA60"] else 0) if ok(last["MA60"]) else None,
+        is_hi(20), is_hi(60), is_hi(240) if n >= 200 else None,
+        int(hi60.tail(10).sum()), _streak(hi20),
+        is_lo(20), is_lo(60), is_lo(240) if n >= 200 else None,
+        int(lo60.tail(10).sum()), _streak(lo20),
+        r((close / c.tail(w).max() - 1) * 100, 1),                # 距離一年高點（%）
+    ]
+
+
 def build_record(code, name, ticker, df, period, info=None):
     info = info or {}
     df = add_indicators(df)
@@ -432,7 +520,12 @@ def build_record(code, name, ticker, df, period, info=None):
     flag = {"disposed": "d", "candidate": "c", "attention": "a"}.get(alert.get("level"), "")
     summary = [code, name, market, round(close, 2), round(day_chg, 2),
                trend["value"] if trend else "", trend["tone"] if trend else "neutral", flag]
-    return record, summary, df.index[-1].strftime("%Y-%m-%d")
+    srow = screen_row(code, name, market, df, flag, info.get("profile", {}))
+    profile = info.get("profile") or {}
+    if profile.get("cap"):
+        record["cap"] = round(profile["cap"], 1)
+        record["ind"] = profile.get("ind", "")
+    return record, summary, df.index[-1].strftime("%Y-%m-%d"), srow
 
 
 # ============================================================
@@ -672,6 +765,45 @@ def build_alert(code, att, disp, cand, tdays):
     }
 
 
+INDUSTRY = {
+    "01": "水泥", "02": "食品", "03": "塑膠", "04": "紡織纖維", "05": "電機機械", "06": "電器電纜",
+    "08": "玻璃陶瓷", "09": "造紙", "10": "鋼鐵", "11": "橡膠", "12": "汽車", "14": "建材營造",
+    "15": "航運", "16": "觀光餐旅", "17": "金融保險", "18": "貿易百貨", "20": "其他", "21": "化學",
+    "22": "生技醫療", "23": "油電燃氣", "24": "半導體", "25": "電腦及週邊", "26": "光電",
+    "27": "通信網路", "28": "電子零組件", "29": "電子通路", "30": "資訊服務", "31": "其他電子",
+    "32": "文化創意", "33": "農業科技", "34": "電子商務", "35": "綠能環保", "36": "數位雲端",
+    "37": "運動休閒", "38": "居家生活", "91": "存託憑證",
+}
+
+
+def fetch_profiles() -> dict:
+    """公司基本資料：股本（實收資本額）、已發行股數、產業別 → {代號: {...}}"""
+    out = {}
+    sources = ((f"{TWSE_OPEN}/opendata/t187ap03_L", "公司代號", "實收資本額", "已發行普通股數或TDR原股發行股數", "產業別"),
+               (f"{TPEX_OPEN}/mopsfin_t187ap03_O", "SecuritiesCompanyCode", "Paidin.Capital.NTDollars", "IssueShares", "SecuritiesIndustryCode"))
+    for url, ck, capk, shk, indk in sources:
+        try:
+            rows = list(map(norm, get_json(url, 60)))
+            for r in rows:
+                code = str(r.get(ck, "")).strip()
+                if not CODE_RE.match(code):
+                    continue
+                try:
+                    cap = float(str(r.get(capk, "")).replace(",", "")) / 1e8   # 億元
+                except ValueError:
+                    cap = None
+                try:
+                    shares = float(str(r.get(shk, "")).replace(",", ""))
+                except ValueError:
+                    shares = None
+                ind = str(r.get(indk, "")).strip().zfill(2)
+                out[code] = {"cap": cap, "shares": shares, "ind": INDUSTRY.get(ind, f"其他({ind})" if ind.strip("0") else "")}
+            print(f"  公司基本資料（{'上市' if 'twse' in url else '上櫃'}）：{len(rows)} 筆")
+        except Exception as e:
+            print(f"  無法取得公司基本資料（{url}）：{e}")
+    return out
+
+
 def fetch_market_info(tdays: list, today: str):
     print("取得注意股、處置股、重大訊息、股東會資料…")
     end = datetime.now(TW).date()
@@ -680,7 +812,8 @@ def fetch_market_info(tdays: list, today: str):
     cand = fetch_candidates()
     news = merge_news(fetch_news(), today)
     meetings = fetch_meetings()
-    return att, disp, cand, news, meetings
+    profiles = fetch_profiles()
+    return att, disp, cand, news, meetings, profiles
 
 
 # ============================================================
@@ -747,16 +880,16 @@ def main():
     if SITE.exists():
         shutil.rmtree(SITE)
     (SITE / "data").mkdir(parents=True)
-    for f in ("index.html", "report.html"):
+    for f in ("index.html", "report.html", "screen.html"):
         shutil.copy(WEB / f, SITE / f)
 
     # 交易日曆：用資料最完整的那一檔的日期
     ref = max(prices.values(), key=len) if prices else None
     tdays = [d.strftime("%Y-%m-%d") for d in ref.index] if ref is not None else []
     today = datetime.now(TW).strftime("%Y-%m-%d")
-    att, disp, cand, news, meetings = fetch_market_info(tdays, today)
+    att, disp, cand, news, meetings, profiles = fetch_market_info(tdays, today)
 
-    rows, dates, failed, alert_notes = [], set(), [], {}
+    rows, dates, failed, alert_notes, screen_rows = [], set(), [], {}, []
     for code, (name, suffix) in universe.items():
         candidates = [code + suffix] if suffix else [code + ".TW", code + ".TWO"]
         ticker = next((t for t in candidates if t in prices), None)
@@ -767,9 +900,10 @@ def main():
             "alert": build_alert(code, att, disp, cand, tdays),
             "meetings": meetings.get(code, []),
             "news": news.get(code, [])[:15],
+            "profile": profiles.get(code, {}),
         }
         try:
-            record, summary, last_date = build_record(code, name or code, ticker, prices[ticker], args.period, info)
+            record, summary, last_date, srow = build_record(code, name or code, ticker, prices[ticker], args.period, info)
         except Exception as e:
             print(f"  {code} 分析失敗：{e}")
             failed.append(code)
@@ -777,6 +911,7 @@ def main():
         (SITE / "data" / f"{code}.json").write_text(
             json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         rows.append(summary)
+        screen_rows.append(srow)
         a = info["alert"]
         if summary[7]:  # 首頁警示清單要顯示的一行說明
             if summary[7] == "d":
@@ -796,6 +931,10 @@ def main():
     }
     (SITE / "list.json").write_text(
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    screen_rows.sort(key=lambda r: r[0])
+    (SITE / "screen.json").write_text(json.dumps(
+        {"updated": listing["updated"], "date": listing["date"], "cols": SCREEN_COLS, "rows": screen_rows},
+        ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     flags = [r[7] for r in rows]
     n_tw = sum(r[2] == "上市" for r in rows)

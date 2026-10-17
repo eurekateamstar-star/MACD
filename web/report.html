@@ -341,7 +341,7 @@ if (!code) {
 
 function show(R) {
   document.title = `${R.code} ${R.name}｜台股學習站`;
-  $('ticker').textContent = `${R.code} ・ ${R.market}`;
+  $('ticker').textContent = [R.code, R.market, R.ind, R.cap ? `股本 ${R.cap >= 100 ? Math.round(R.cap).toLocaleString() : R.cap} 億` : ''].filter(Boolean).join(' ・ ');
   $('name').textContent = R.name;
   const dates = R.d.dates;
   $('range').textContent = `資料期間 ${dates[0]} ～ ${dates[dates.length - 1]}`;

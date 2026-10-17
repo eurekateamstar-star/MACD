@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<title>智慧選股｜台股學習站</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65; --line: #e4e2db; --soft: #efeee8;
+    --up: #d1342c; --down: #1a8a4a; --warn: #c27c0e; --accent: #2f6fd6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9c9a92; --line: #2e2d2a; --soft: #2a2926;
+      --up: #f0574e; --down: #3cbf72; --warn: #e8a53a; --accent: #5b92ec;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
+         font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 12px 16px 60px; }
+  .back { color: var(--muted); text-decoration: none; font-size: 15px; display: inline-block; padding: 6px 0; }
+  h1 { font-size: 22px; margin: 4px 0 0; }
+  .meta { color: var(--muted); font-size: 13px; margin: 2px 0 16px; }
+  h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 18px 4px 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  h2 small { font-weight: 400; font-size: 13px; }
+
+  /* 一鍵策略 */
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .preset { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 7px 13px;
+            cursor: pointer; font-size: 14px; }
+  .preset.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .preset-desc { font-size: 13px; color: var(--muted); margin: 8px 4px 0; min-height: 1em; }
+  .preset-desc b { color: var(--ink); }
+
+  /* 條件 */
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+  .cond { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .cond:first-child { border-top: none; }
+  .cond .label { font-weight: 600; font-size: 15px; align-self: center; }
+  .cond .del { border: 0; background: var(--soft); color: var(--muted); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
+  .cond .ctrl { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cond .hint { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  .ctrl select, .ctrl input { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 8px; font-size: 15px; }
+  .ctrl input { width: 84px; font-variant-numeric: tabular-nums; }
+  .ctrl .unit { color: var(--muted); font-size: 14px; }
+  .empty-cond { color: var(--muted); font-size: 14px; padding: 14px 0; text-align: center; }
+  .add-row { display: flex; gap: 8px; margin-top: 10px; }
+  .add-row select { flex: 1; min-width: 0; border: 1px dashed var(--accent); color: var(--accent); background: var(--panel);
+                    border-radius: 10px; padding: 10px; font-size: 15px; }
+  .add-row button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 14px; color: var(--muted); cursor: pointer; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 4px 0; font-size: 14px; color: var(--muted); }
+  .opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .opts input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  /* 結果 */
+  .res-head { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; align-items: center;
+              justify-content: space-between; gap: 8px; padding: 10px 4px 8px; margin-top: 10px; }
+  .count { font-size: 17px; font-weight: 700; }
+  .count small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .sort { display: flex; gap: 4px; align-items: center; }
+  .sort select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 8px; font-size: 14px; }
+  .sort button { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; }
+  .list { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 14px; border-top: 1px solid var(--line);
+         color: inherit; text-decoration: none; }
+  .row:first-child { border-top: none; }
+  a.row:active, a.row:hover { background: var(--soft); }
+  .who { min-width: 0; }
+  .name { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--soft); color: var(--muted); }
+  .badge { font-size: 11px; padding: 0 6px; border-radius: 4px; font-weight: 600; }
+  .badge.d { background: var(--up); color: #fff; } .badge.c { background: var(--warn); color: #fff; }
+  .badge.a { border: 1px solid var(--warn); color: var(--warn); }
+  .px { text-align: right; font-variant-numeric: tabular-nums; }
+  .close { font-weight: 700; font-size: 16px; }
+  .chg { display: block; font-size: 13px; font-weight: 600; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .chip { font-size: 12px; padding: 1px 7px; border-radius: 99px; background: var(--soft); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .chip i { font-style: normal; color: var(--muted); margin-right: 3px; }
+  .more { display: block; width: 100%; margin-top: 10px; border: 1px solid var(--line); background: var(--panel);
+          border-radius: 10px; padding: 12px; color: var(--accent); cursor: pointer; }
+  .nores { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 14px; }
+  .note { color: var(--muted); font-size: 12px; margin: 14px 4px 0; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← 首頁</a>
+  <h1>智慧選股</h1>
+  <div class="meta" id="meta">載入中…</div>
+
+  <h2><span>一鍵策略</span><small>點一下馬上篩選</small></h2>
+  <div class="presets" id="presets"></div>
+  <div class="preset-desc" id="pdesc"></div>
+
+  <h2><span>我的條件</span><small>全部條件都要符合</small></h2>
+  <div class="box" id="conds"></div>
+  <div class="add-row">
+    <select id="add"><option value="">＋ 新增條件…</option></select>
+    <button id="clear">清除</button>
+  </div>
+  <div class="opts">
+    <label><input type="checkbox" id="noetf" checked>只看個股（排除 ETF）</label>
+    <label><input type="checkbox" id="noalert">排除處置 / 注意股</label>
+  </div>
+
+  <div class="res-head">
+    <div class="count" id="count">—</div>
+    <div class="sort">
+      <select id="sortk"></select>
+      <button id="sortd" aria-label="排序方向">↓</button>
+    </div>
+  </div>
+  <div class="list" id="list"></div>
+  <button class="more" id="more" hidden>顯示更多</button>
+
+  <p class="note">選股結果是依照最近一個交易日收盤後的資料計算，只是幫你縮小研究範圍，不代表買賣建議。點任一檔看完整報告與白話解釋。</p>
+  <footer id="foot">僅供學習參考，不構成投資建議</footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- 可以篩選的欄位 ----------
+const YESNO = [[1, '是'], [0, '否']];
+const CROSS = [[1, '黃金交叉（近 3 日）'], [-1, '死亡交叉（近 3 日）']];
+const FIELDS = [
+  { g: '價格', k: 'close', label: '收盤價', type: 'num', unit: '元', def: 50, hint: '最近一個交易日的收盤價' },
+  { g: '價格', k: 'chg', label: '今日漲跌幅', type: 'num', unit: '%', def: 3, hint: '跟前一天比漲跌了多少' },
+  { g: '價格', k: 'ret5', label: '5 日漲跌幅', type: 'num', unit: '%', def: 5, hint: '最近一週的漲跌' },
+  { g: '價格', k: 'ret20', label: '20 日漲跌幅', type: 'num', unit: '%', def: 10, hint: '最近一個月的漲跌' },
+  { g: '價格', k: 'dist_hi', label: '距一年高點', type: 'num', unit: '%', def: -10, op: 'ge', hint: '0 = 就在一年高點；-20 = 比高點低 20%' },
+  { g: '新高 / 破底', k: 'nh20', label: '今日創 20 日新高', type: 'enum', opts: YESNO, hint: '收盤價是最近 20 個交易日最高' },
+  { g: '新高 / 破底', k: 'nh60', label: '今日創 60 日新高', type: 'enum', opts: YESNO, hint: '收盤價是最近一季最高' },
+  { g: '新高 / 破底', k: 'nh240', label: '今日創一年新高', type: 'enum', opts: YESNO, hint: '收盤價是最近一年最高' },
+  { g: '新高 / 破底', k: 'nh_days', label: '近 10 日創 60 日新高天數', type: 'num', unit: '天', def: 3, hint: '天數越多，代表越常創新高（持續創新高）' },
+  { g: '新高 / 破底', k: 'nh_streak', label: '連續創 20 日新高天數', type: 'num', unit: '天', def: 3, hint: '連續好幾天都收在新高' },
+  { g: '新高 / 破底', k: 'nl20', label: '今日破 20 日新低', type: 'enum', opts: YESNO, hint: '收盤價是最近 20 個交易日最低' },
+  { g: '新高 / 破底', k: 'nl60', label: '今日破 60 日新低（破底）', type: 'enum', opts: YESNO, hint: '收盤價是最近一季最低' },
+  { g: '新高 / 破底', k: 'nl240', label: '今日創一年新低', type: 'enum', opts: YESNO, hint: '收盤價是最近一年最低' },
+  { g: '新高 / 破底', k: 'nl_days', label: '近 10 日破 60 日新低天數', type: 'num', unit: '天', def: 3, hint: '天數越多，代表一直在破底' },
+  { g: '新高 / 破底', k: 'nl_streak', label: '連續破 20 日新低天數', type: 'num', unit: '天', def: 3, hint: '連續好幾天都收在新低' },
+  { g: '成交量', k: 'vol', label: '成交量', type: 'num', unit: '張', def: 1000, hint: '今天成交幾張（1 張 = 1000 股），太少的股票不好買賣' },
+  { g: '成交量', k: 'vr', label: '量比', type: 'num', unit: '倍', def: 2, hint: '今日量 ÷ 5 日均量，大於 1 代表比平常熱絡' },
+  { g: '成交量', k: 'vma20', label: '20 日均量', type: 'num', unit: '張', def: 500, hint: '最近一個月平均每天成交幾張' },
+  { g: '成交量', k: 'amt', label: '成交金額', type: 'num', unit: '億', def: 1, hint: '今天成交了多少錢' },
+  { g: '股本 / 市值', k: 'cap', label: '股本', type: 'num', unit: '億', def: 50, op: 'le', hint: '公司實收資本額。小於 20 億算小型股，大於 100 億算大型股' },
+  { g: '股本 / 市值', k: 'mcap', label: '市值', type: 'num', unit: '億', def: 1000, hint: '股價 × 發行股數，代表公司在市場上值多少錢' },
+  { g: 'MACD', k: 'dif', label: 'MACD 的 DIF（快線）', type: 'num', unit: '', def: 0, hint: '大於 0 代表短期均線在長期均線之上，偏多' },
+  { g: 'MACD', k: 'dea', label: 'MACD 線（慢線）', type: 'num', unit: '', def: 0, hint: 'DIF 的 9 日平均' },
+  { g: 'MACD', k: 'osc', label: 'MACD 柱狀體', type: 'num', unit: '', def: 0, hint: '大於 0 是紅柱（多方較強），小於 0 是綠柱' },
+  { g: 'MACD', k: 'macd_x', label: 'MACD 交叉', type: 'enum', opts: CROSS, hint: 'DIF 穿過 MACD 線' },
+  { g: 'MACD', k: 'osc_up', label: 'MACD 柱狀體比昨天大', type: 'enum', opts: YESNO, hint: '紅柱變長或綠柱縮短，動能轉強' },
+  { g: 'KDJ / RSI', k: 'k', label: 'K 值', type: 'num', unit: '', def: 30, op: 'le', hint: '低於 20 偏冷、高於 80 偏熱' },
+  { g: 'KDJ / RSI', k: 'd', label: 'D 值', type: 'num', unit: '', def: 30, op: 'le', hint: 'K 的平滑線' },
+  { g: 'KDJ / RSI', k: 'j', label: 'J 值', type: 'num', unit: '', def: 0, op: 'le', hint: '低於 0 跌太急、高於 100 漲太急' },
+  { g: 'KDJ / RSI', k: 'kd_x', label: 'KD 交叉', type: 'enum', opts: CROSS, hint: 'K 線穿過 D 線' },
+  { g: 'KDJ / RSI', k: 'rsi', label: 'RSI', type: 'num', unit: '', def: 30, op: 'le', hint: '低於 30 超賣、高於 70 過熱' },
+  { g: '均線', k: 'ma', label: '均線排列', type: 'enum', opts: [[1, '多頭排列'], [-1, '空頭排列'], [0, '糾結']], hint: '週線、月線、季線的上下順序' },
+  { g: '均線', k: 'above20', label: '站上月線（MA20）', type: 'enum', opts: YESNO, hint: '收盤價在 20 日均線之上' },
+  { g: '均線', k: 'above60', label: '站上季線（MA60）', type: 'enum', opts: YESNO, hint: '收盤價在 60 日均線之上' },
+  { g: '其他', k: 'market', label: '市場', type: 'enum', opts: [['上市', '上市'], ['上櫃', '上櫃']] },
+  { g: '其他', k: 'ind', label: '產業', type: 'enum', opts: [] },
+  { g: '其他', k: 'flag', label: '警示狀態', type: 'enum', opts: [['d', '處置中'], ['c', '可能處置'], ['a', '今日注意'], ['', '沒有警示']] },
+];
+const F = Object.fromEntries(FIELDS.map(f => [f.k, f]));
+
+// ---------- 一鍵策略 ----------
+const PRESETS = [
+  { name: '持續創新高', desc: '近 10 日有 3 天以上創 60 日新高，今天也是', sort: 'nh_days',
+    c: [{ k: 'nh_days', op: 'ge', a: 3 }, { k: 'nh60', op: 'eq', a: 1 }] },
+  { name: '創一年新高', desc: '收盤價是最近一年最高', sort: 'chg', c: [{ k: 'nh240', op: 'eq', a: 1 }] },
+  { name: '破底', desc: '收盤價跌破最近一季（60 日）最低', sort: 'chg', dir: 1, c: [{ k: 'nl60', op: 'eq', a: 1 }] },
+  { name: '持續破底', desc: '近 10 日有 3 天以上創 60 日新低，今天也是', sort: 'nl_days',
+    c: [{ k: 'nl_days', op: 'ge', a: 3 }, { k: 'nl60', op: 'eq', a: 1 }] },
+  { name: 'MACD 黃金交叉', desc: 'DIF 近 3 日向上穿過 MACD 線', sort: 'osc', c: [{ k: 'macd_x', op: 'eq', a: 1 }] },
+  { name: 'MACD 紅柱放大', desc: 'DIF 大於 0，紅柱比昨天長', sort: 'osc',
+    c: [{ k: 'dif', op: 'ge', a: 0 }, { k: 'osc', op: 'ge', a: 0 }, { k: 'osc_up', op: 'eq', a: 1 }] },
+  { name: 'KD 低檔黃金交叉', desc: 'K 線向上穿過 D 線，且 K 在 35 以下', sort: 'k', dir: 1,
+    c: [{ k: 'kd_x', op: 'eq', a: 1 }, { k: 'k', op: 'le', a: 35 }] },
+  { name: '爆量長紅', desc: '量比 2 倍以上、漲 3% 以上、成交 1000 張以上', sort: 'vr',
+    c: [{ k: 'vr', op: 'ge', a: 2 }, { k: 'chg', op: 'ge', a: 3 }, { k: 'vol', op: 'ge', a: 1000 }] },
+  { name: '多頭排列', desc: '週線 > 月線 > 季線，股價站上月線', sort: 'ret20',
+    c: [{ k: 'ma', op: 'eq', a: 1 }, { k: 'above20', op: 'eq', a: 1 }] },
+  { name: 'RSI 超賣', desc: 'RSI 低於 30，短線跌深', sort: 'rsi', dir: 1, c: [{ k: 'rsi', op: 'le', a: 30 }] },
+  { name: '小股本放量', desc: '股本 20 億以下，量比 2 倍以上且收紅', sort: 'vr',
+    c: [{ k: 'cap', op: 'le', a: 20 }, { k: 'vr', op: 'ge', a: 2 }, { k: 'chg', op: 'ge', a: 0 }] },
+  { name: '大型股站上月線', desc: '股本 100 億以上，收盤站上月線', sort: 'mcap',
+    c: [{ k: 'cap', op: 'ge', a: 100 }, { k: 'above20', op: 'eq', a: 1 }] },
+];
+
+const SORTS = [['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 日漲跌'], ['vol', '成交量'], ['vr', '量比'],
+  ['amt', '成交金額'], ['cap', '股本'], ['mcap', '市值'], ['osc', 'MACD 柱'], ['dif', 'MACD DIF'], ['k', 'K 值'], ['rsi', 'RSI'],
+  ['dist_hi', '距一年高點'], ['nh_days', '創新高天數'], ['nl_days', '破底天數']];
+
+// ---------- 狀態 ----------
+let COLS = {}, ROWS = [], SHOWN = 100;
+let S = { conds: [], preset: null, noetf: true, noalert: false, sort: 'chg', dir: -1 };
+try { const v = JSON.parse(localStorage.getItem('screen')); if (v && Array.isArray(v.conds)) S = Object.assign(S, v); } catch (e) {}
+const save = () => { try { localStorage.setItem('screen', JSON.stringify(S)); } catch (e) {} };
+const val = (row, k) => row[COLS[k]];
+
+// ---------- 畫面 ----------
+function renderPresets() {
+  $('presets').innerHTML = PRESETS.map((p, i) =>
+    `<button class="preset ${S.preset === i ? 'on' : ''}" data-i="${i}">${esc(p.name)}</button>`).join('');
+  const cur = PRESETS[S.preset];
+  $('pdesc').innerHTML = cur ? `<b>${esc(cur.name)}：</b>${esc(cur.desc)}（再點一次取消）` : '點一個策略，條件會自動填好，你也可以再自己調整。';
+  document.querySelectorAll('.preset').forEach(b => b.addEventListener('click', () => {
+    const i = +b.dataset.i, p = PRESETS[i];
+    if (S.preset === i) { S.preset = null; S.conds = []; }
+    else { S.preset = i; S.conds = p.c.map(c => Object.assign({}, c)); S.sort = p.sort || 'chg'; S.dir = p.dir || -1; }
+    SHOWN = 100; save(); renderAll();
+    $('count').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+}
+
+function condCtrl(c, i) {
+  const f = F[c.k];
+  if (f.type === 'enum') {
+    return `<select data-i="${i}" data-p="a">${f.opts.map(([v, t]) => `<option value="${esc(v)}" ${String(c.a) === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  }
+  const num = (p, v) => `<input type="number" inputmode="decimal" step="any" data-i="${i}" data-p="${p}" value="${v ?? ''}">`;
+  return `<select data-i="${i}" data-p="op">
+      <option value="ge" ${c.op === 'ge' ? 'selected' : ''}>大於等於</option>
+      <option value="le" ${c.op === 'le' ? 'selected' : ''}>小於等於</option>
+      <option value="bt" ${c.op === 'bt' ? 'selected' : ''}>介於</option></select>
+    ${num('a', c.a)}${c.op === 'bt' ? `<span class="unit">～</span>${num('b', c.b)}` : ''}<span class="unit">${esc(f.unit || '')}</span>`;
+}
+
+function renderConds() {
+  const box = $('conds');
+  if (!S.conds.length) { box.innerHTML = '<div class="empty-cond">還沒有條件。點上面的一鍵策略，或從下面新增條件。</div>'; return; }
+  box.innerHTML = S.conds.map((c, i) => {
+    const f = F[c.k];
+    return `<div class="cond"><div class="label">${esc(f.label)}</div><button class="del" data-del="${i}" aria-label="刪除">×</button>
+      <div class="ctrl">${condCtrl(c, i)}</div>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}</div>`;
+  }).join('');
+  box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    S.conds.splice(+b.dataset.del, 1); S.preset = null; SHOWN = 100; save(); renderAll();
+  }));
+  box.querySelectorAll('[data-p]').forEach(el => el.addEventListener('change', () => {
+    const c = S.conds[+el.dataset.i], p = el.dataset.p;
+    if (p === 'op') { c.op = el.value; if (c.op === 'bt' && c.b == null) c.b = c.a; renderConds(); }
+    else if (F[c.k].type === 'enum') { const o = F[c.k].opts.find(([v]) => String(v) === el.value); c.a = o ? o[0] : el.value; }
+    else c[p] = el.value === '' ? null : +el.value;
+    S.preset = null; SHOWN = 100; save(); renderPresets(); renderResults();
+  }));
+}
+
+function renderAdd() {
+  const groups = [...new Set(FIELDS.map(f => f.g))];
+  $('add').innerHTML = '<option value="">＋ 新增條件…</option>' + groups.map(g =>
+    `<optgroup label="${esc(g)}">${FIELDS.filter(f => f.g === g).map(f => `<option value="${f.k}">${esc(f.label)}</option>`).join('')}</optgroup>`).join('');
+}
+$('add').addEventListener('change', (e) => {
+  const f = F[e.target.value];
+  if (!f) return;
+  S.conds.push(f.type === 'enum' ? { k: f.k, op: 'eq', a: f.opts[0] ? f.opts[0][0] : '' } : { k: f.k, op: f.op || 'ge', a: f.def });
+  S.preset = null; SHOWN = 100; e.target.value = ''; save(); renderAll();
+});
+$('clear').addEventListener('click', () => { S.conds = []; S.preset = null; SHOWN = 100; save(); renderAll(); });
+$('noetf').addEventListener('change', (e) => { S.noetf = e.target.checked; SHOWN = 100; save(); renderResults(); });
+$('noalert').addEventListener('change', (e) => { S.noalert = e.target.checked; SHOWN = 100; save(); renderResults(); });
+$('sortk').addEventListener('change', (e) => { S.sort = e.target.value; save(); renderResults(); });
+$('sortd').addEventListener('click', () => { S.dir = -S.dir; save(); renderResults(); });
+$('more').addEventListener('click', () => { SHOWN += 100; renderResults(); });
+
+function match(row) {
+  if (S.noetf && String(val(row, 'code')).startsWith('00')) return false;
+  if (S.noalert && val(row, 'flag')) return false;
+  for (const c of S.conds) {
+    const v = val(row, c.k), f = F[c.k];
+    if (f.type === 'enum') { if (String(v ?? '') !== String(c.a)) return false; continue; }
+    if (v == null) return false;
+    if (c.op === 'ge' && c.a != null && v < c.a) return false;
+    if (c.op === 'le' && c.a != null && v > c.a) return false;
+    if (c.op === 'bt') {
+      const lo = Math.min(c.a ?? -Infinity, c.b ?? Infinity), hi = Math.max(c.a ?? -Infinity, c.b ?? Infinity);
+      if (v < lo || v > hi) return false;
+    }
+  }
+  return true;
+}
+
+function fmtChip(k, v) {
+  const f = F[k];
+  if (v == null) return '';
+  if (f && f.type === 'enum') { const o = f.opts.find(([x]) => String(x) === String(v)); return o ? o[1] : ''; }
+  const unit = f ? f.unit : '';
+  const n = Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : (+v.toFixed(2)).toString();
+  return n + (unit === '%' ? '%' : unit ? ' ' + unit : '');
+}
+
+function renderResults() {
+  $('sortk').innerHTML = SORTS.map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${t}</option>`).join('');
+  $('sortd').textContent = S.dir < 0 ? '↓' : '↑';
+  $('noetf').checked = S.noetf; $('noalert').checked = S.noalert;
+  const hits = ROWS.filter(match);
+  hits.sort((a, b) => {
+    const x = val(a, S.sort), y = val(b, S.sort);
+    if (x == null) return 1; if (y == null) return -1;
+    return (x - y) * S.dir;
+  });
+  $('count').innerHTML = `符合 ${hits.length} 檔<small>／共 ${ROWS.length} 檔</small>`;
+  const keys = [...new Set(S.conds.map(c => c.k).filter(k => !['market', 'ind', 'flag'].includes(k)))];
+  if (!keys.includes(S.sort) && !['chg'].includes(S.sort)) keys.push(S.sort);
+  if (!keys.includes('cap')) keys.push('cap');
+  $('list').innerHTML = hits.length ? hits.slice(0, SHOWN).map(r => {
+    const code = val(r, 'code'), chg = val(r, 'chg') ?? 0, flag = val(r, 'flag');
+    const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat', arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
+    const badge = { d: '處置', c: '可能處置', a: '注意' }[flag];
+    const chips = keys.map(k => { const t = fmtChip(k, val(r, k)); return t ? `<span class="chip"><i>${esc(F[k] ? F[k].label.replace(/（.*?）/, '') : k)}</i>${esc(t)}</span>` : ''; }).join('');
+    return `<a class="row" href="report.html?code=${encodeURIComponent(code)}">
+      <div class="who"><div class="name">${esc(val(r, 'name'))}</div>
+        <div class="sub"><span>${esc(code)}</span><span class="tag">${esc(val(r, 'market'))}</span>${val(r, 'ind') ? `<span class="tag">${esc(val(r, 'ind'))}</span>` : ''}${badge ? `<span class="badge ${flag}">${badge}</span>` : ''}</div></div>
+      <div class="px"><span class="close">${(val(r, 'close') ?? 0).toFixed(2)}</span><span class="chg ${cls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></div>
+      <div class="chips">${chips}</div></a>`;
+  }).join('') : '<div class="nores">沒有符合條件的股票，試著放寬條件看看。</div>';
+  $('more').hidden = hits.length <= SHOWN;
+  $('more').textContent = `顯示更多（還有 ${Math.max(0, hits.length - SHOWN)} 檔）`;
+}
+
+function renderAll() { renderPresets(); renderConds(); renderResults(); }
+
+fetch('screen.json', { cache: 'no-cache' }).then(r => r.json()).then(data => {
+  data.cols.forEach((c, i) => COLS[c] = i);
+  ROWS = data.rows;
+  F.ind.opts = [...new Set(ROWS.map(r => val(r, 'ind')).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant')).map(x => [x, x]);
+  S.conds = S.conds.filter(c => F[c.k]);
+  $('meta').textContent = `共 ${ROWS.length} 檔 ・ 資料日期 ${data.date}`;
+  $('foot').textContent = `更新時間 ${data.updated}（台北時間）・ 資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議`;
+  renderAdd(); renderAll();
+}).catch(() => { $('meta').textContent = '資料載入失敗，請稍後重新整理'; });
+</script>
+</body>
+</html>
