@@ -101,6 +101,16 @@
   .news .body { white-space: pre-line; font-size: 13px; margin-top: 8px; opacity: .85; }
   .empty { color: var(--muted); font-size: 14px; }
 
+  .score-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
+  #radar { height: 260px; }
+  .total { text-align: center; margin-bottom: 8px; }
+  .total span { display: block; font-size: 44px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .total small { color: var(--muted); font-size: 13px; }
+  .score-side .mini { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+  .mine-box { background: var(--danger-bg); border: 1px solid var(--up); border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 14px; }
+  .mine-box b { color: var(--up); }
+  .ok-box { background: var(--grid); border-radius: 10px; padding: 8px 12px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  @media (max-width: 640px) { .score-wrap { grid-template-columns: 1fr; } #radar { height: 240px; } }
   .chart { width: 100%; }
   #inst { height: 240px; } #rev { height: 260px; }
   #price { height: 460px; } #vol { height: 260px; } #macd { height: 280px; } #kdj { height: 280px; } #bt { height: 300px; }
@@ -179,6 +189,20 @@
     </div>
 
     <div id="alert" class="alert" hidden></div>
+
+    <section id="score-sec" hidden>
+      <h2>綜合評分</h2>
+      <p class="hint">把技術、籌碼、基本面、風險各打 0～100 分（風險分數越高越安全），總分是四項平均。</p>
+      <div class="score-wrap">
+        <div id="radar" class="chart"></div>
+        <div class="score-side">
+          <div class="total"><span id="s-total">—</span><small>總分</small></div>
+          <div class="mini" id="s-mini"></div>
+        </div>
+      </div>
+      <div id="mine"></div>
+      <div id="s-extra"></div>
+    </section>
 
     <section>
       <h2>白話分析</h2>
@@ -301,6 +325,10 @@
         <p>股價或成交量出現異常（例如短期漲跌太大、週轉率太高），證交所或櫃買中心會公布為「注意股」，提醒投資人。如果連續好幾天、或一段期間內多次被列為注意股，就會被「處置」：改成人工撮合（約每 2 分鐘撮合一次，不是隨時成交），大量買賣還要先付款或先交股票。常見的處置條件像是連續 3 個營業日、或最近 10 個營業日內有 6 個營業日達到注意標準。</p></details>
       <details><summary>可能達處置標準</summary>
         <p>證交所和櫃買中心每天會公布「注意累計次數可能達處置標準」的名單，代表這檔股票再被列為注意股，就可能被處置。本站另外用最近的注意紀錄估算「還差幾次」，但最終以官方公告為準。</p></details>
+      <details><summary>綜合評分、RS 強度</summary>
+        <p>綜合評分把技術、籌碼、基本面、風險各打 0～100 分，方便快速比較，但只是參考。RS（相對強度）是把近一年漲幅（近 3 個月加重）跟全部股票比較的排名，PR 90 代表比 90% 的股票強，是美國歐尼爾 CAN SLIM 選股法的核心指標。</p></details>
+      <details><summary>地雷股</summary>
+        <p>本站把「變更交易（含全額交割）、管理股票、停止交易、處置中、今年累計虧損、每股淨值低於 10 元、負債比超過 70%（金融業除外）」列為地雷警示。這些公司不一定會出事，但風險比較高，新手建議先避開。</p></details>
       <details><summary>三大法人</summary>
         <p>外資（外國投資機構）、投信（國內基金公司）、自營商（券商自己的錢）。他們資金大、研究多，買賣動向常被當作參考。投信常買中小型股，連續買超特別受關注。</p></details>
       <details><summary>融資、融券、券資比</summary>
@@ -396,6 +424,7 @@ function show(R) {
   showNews(R.news || []);
   showVolumeStats(R.d);
   showChipFund(R);
+  showScore(R);
 
   $('msg').hidden = true; $('main').hidden = false;
   setupCharts(R);
@@ -485,6 +514,48 @@ function showNews(list) {
     <div class="body">${esc(n.x)}</div></details>`).join('');
 }
 
+
+
+// ---------- 綜合評分 ----------
+function scoreColor(v) { return v == null ? '' : v >= 75 ? 'up' : v < 45 ? 'down' : ''; }
+function showScore(R) {
+  const S = R.score;
+  if (!S) return;
+  $('score-sec').hidden = false;
+  $('s-total').textContent = S.s_total ?? '—';
+  $('s-total').className = scoreColor(S.s_total);
+  const f = (v) => v == null ? '—' : `<span class="${scoreColor(v)}">${v}</span>`;
+  $('s-mini').innerHTML = [['技術面', S.s_tech], ['籌碼面', S.s_chip], ['基本面', S.s_fund], ['風險（安全度）', S.s_risk]]
+    .map(([l, v]) => `<div><div class="label">${l}</div><div class="num">${f(v)}</div></div>`).join('');
+  $('mine').innerHTML = S.mine && S.mine.length
+    ? `<div class="mine-box"><b>⚠ 地雷警示：</b>${S.mine.map(esc).join('、')}。新手建議避開，或先深入了解原因。</div>`
+    : '<div class="ok-box">✓ 沒有發現地雷警示（變更交易、全額交割、虧損、低淨值、高負債等）。</div>';
+  const items = [];
+  if (S.rs != null) items.push(['RS 強度排名', `PR ${S.rs}`, S.rs >= 80 ? '比 ' + S.rs + '% 的股票強' : '']);
+  if (S.rel3m != null) items.push(['近 3 個月 vs 大盤', `<span class="${S.rel3m >= 0 ? 'up' : 'down'}">${S.rel3m >= 0 ? '+' : ''}${S.rel3m}%</span>`, S.rel3m >= 0 ? '強於大盤' : '弱於大盤']);
+  if (S.ind_rank != null) items.push(['產業強弱', `第 ${S.ind_rank} 名`, `${esc(R.ind || '')} 近 20 日 ${S.ind_ret20 >= 0 ? '+' : ''}${S.ind_ret20}%`]);
+  if (S.bias20 != null) items.push(['月線乖離', `${S.bias20 >= 0 ? '+' : ''}${S.bias20}%`, Math.abs(S.bias20) >= 15 ? (S.bias20 > 0 ? '漲多，留意拉回' : '跌深，留意反彈') : '']);
+  if (S.above240 != null) items.push(['年線', S.above240 ? '站上' : '跌破', S.ma240_up == null ? '' : S.ma240_up ? '年線上揚' : '年線下彎']);
+  if (S.debt != null) items.push(['負債比', S.debt + '%', S.debt > 60 && R.ind !== '金融保險' ? '偏高' : '']);
+  if (S.cur != null) items.push(['流動比率', S.cur + '%', S.cur >= 150 ? '短期償債能力好' : S.cur < 100 ? '偏低' : '']);
+  if (S.peg != null) items.push(['PEG（以營收估）', S.peg, S.peg <= 1 ? '便宜又在成長' : '']);
+  if (S.dt_ratio != null) items.push(['當沖比例', S.dt_ratio + '%', S.dt_ratio > 50 ? '短線客多' : '']);
+  $('s-extra').innerHTML = items.length ? mini(items) : '';
+}
+function drawRadar(R, C, font) {
+  const S = R.score;
+  if (!S) return;
+  const labels = ['技術面', '籌碼面', '基本面', '風險（安全）'];
+  const vals = [S.s_tech, S.s_chip, S.s_fund, S.s_risk].map(v => v ?? 0);
+  Plotly.react('radar', [{
+    type: 'scatterpolar', r: [...vals, vals[0]], theta: [...labels, labels[0]], fill: 'toself',
+    line: { color: C.ma20, width: 2 }, fillcolor: C.ma20 + '33', hovertemplate: '%{theta}：%{r} 分<extra></extra>',
+  }], {
+    paper_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false, margin: { l: 40, r: 40, t: 20, b: 20 }, dragmode: false,
+    polar: { bgcolor: 'rgba(0,0,0,0)', radialaxis: { range: [0, 100], angle: 45, tickangle: 45, tickvals: [50, 100], tickfont: { size: 9, color: C.muted }, gridcolor: C.grid, linecolor: C.grid },
+             angularaxis: { tickfont: font, gridcolor: C.grid, linecolor: C.grid } },
+  }, { responsive: true, displayModeBar: false, staticPlot: false });
+}
 
 // ---------- 籌碼面、基本面 ----------
 const fmtN = (v, d = 0) => v == null ? '—' : (+v).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -644,6 +715,8 @@ function setupCharts(R) {
       { type: 'scatter', mode: 'lines', name: '買進持有', x: bx, y: ho, line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '%{y:+.1f}%' },
     ], Object.assign({}, base, { xaxis: xaxis(bx), yaxis: yax({ ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }) }), cfg);
   }
+
+  drawRadar(R, C, font);
 
   // 法人買賣超（最近 20 個交易日）
   const I = (R.chip || {}).inst;

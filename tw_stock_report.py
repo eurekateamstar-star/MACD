@@ -206,6 +206,7 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["BB_UP"] = df["MA20"] + 2 * std20           # 布林通道上緣
     df["BB_LOW"] = df["MA20"] - 2 * std20          # 布林通道下緣
     df["MA60"] = df["Close"].rolling(60).mean()   # 季線
+    df["MA240"] = df["Close"].rolling(240).mean() # 年線
 
     # RSI(14)：最近漲勢與跌勢的力道比較，0~100
     delta = df["Close"].diff()
@@ -399,7 +400,7 @@ def clean(series, nd=2):
 
 
 # 智慧選股用的欄位（順序要和 screen_row() 一致；網頁 screen.html 依名稱讀取）
-SCREEN_COLS = [
+BASE_COLS = [
     # 基本
     "code", "name", "market", "ind", "flag",
     "close", "chg", "ret5", "ret20", "amp",
@@ -426,6 +427,19 @@ SCREEN_COLS = [
     "rev_yoy", "rev_mom", "rev_cum_yoy", "rev_hi12", "rev_hi24", "rev_yoy_streak",
     "eps", "gm", "opm", "roe",
 ]
+EXTRA_COLS = [
+    # 長期趨勢、乖離
+    "above240", "ma240_up", "bias20", "bias60",
+    # 相對強度、產業
+    "rs", "rel3m", "ind_ret20", "ind_rank",
+    # 體質
+    "debt", "cur", "bvps", "peg",
+    # 風險
+    "dt_ratio", "altered", "mine",
+    # 評分
+    "s_tech", "s_chip", "s_fund", "s_risk", "s_total", "magic",
+]
+SCREEN_COLS = BASE_COLS + EXTRA_COLS
 
 
 def _cross(a: pd.Series, b: pd.Series, days: int = 3) -> int:
@@ -592,7 +606,7 @@ def screen_row(code, name, market, df, flag, profile, s, extra):
     fin = extra.get("fin") or {}
     hd = extra.get("holders") or {}
 
-    return [
+    base = [
         code, name, market, profile.get("ind", "") or ("ETF" if code.startswith("00") else ""), flag,
         r(close), r(s["chg"].iloc[-1]),
         r((close / c.iloc[-6] - 1) * 100) if n > 5 else None,
@@ -636,6 +650,85 @@ def screen_row(code, name, market, df, flag, profile, s, extra):
         rev.get("hi12"), rev.get("hi24"), rev.get("yoy_streak"),
         fin.get("eps"), fin.get("gm"), fin.get("opm"), fin.get("roe"),
     ]
+    d = dict(zip(BASE_COLS, base))
+
+    # ---- 長期趨勢、乖離 ----
+    d["above240"] = (1 if close > last["MA240"] else 0) if ok(last["MA240"]) else None
+    d["ma240_up"] = (1 if last["MA240"] > df["MA240"].iloc[-21] else 0) if n > 21 and ok(last["MA240"]) and ok(df["MA240"].iloc[-21]) else None
+    d["bias20"] = r((close / last["MA20"] - 1) * 100, 1) if ok(last["MA20"]) else None
+    d["bias60"] = r((close / last["MA60"] - 1) * 100, 1) if ok(last["MA60"]) else None
+
+    # ---- 相對強度、產業 ----
+    rsi_ = extra.get("rs") or {}
+    d["rs"], d["rel3m"] = rsi_.get("rs"), r(rsi_.get("rel3m"), 1)
+    d["ind_ret20"], d["ind_rank"] = r(rsi_.get("ind_ret20"), 1), rsi_.get("ind_rank")
+
+    # ---- 體質 ----
+    d["debt"], d["cur"], d["bvps"] = fin.get("debt"), fin.get("cur"), fin.get("bvps")
+    pe, cum = d["pe"], d["rev_cum_yoy"]
+    d["peg"] = r(pe / cum, 2) if pe and pe > 0 and cum and cum > 0 else None
+
+    # ---- 風險、地雷 ----
+    risk = extra.get("risk") or {}
+    d["dt_ratio"] = r(risk["dt_shares"] / (last["Lots"] * 1000) * 100, 1) if risk.get("dt_shares") and last["Lots"] else None
+    d["altered"] = 1 if risk.get("altered") or risk.get("managed") or risk.get("suspended") else 0
+    is_fin = d["ind"] == "金融保險"
+    etf = code.startswith("00")
+    reasons = []
+    if risk.get("altered"):
+        reasons.append("變更交易（含全額交割、分盤交易）")
+    if risk.get("managed"):
+        reasons.append("管理股票")
+    if risk.get("suspended"):
+        reasons.append("停止交易")
+    if flag == "d":
+        reasons.append("處置中")
+    if d["eps"] is not None and d["eps"] < 0:
+        reasons.append("今年累計虧損")
+    if not etf and d["bvps"] is not None and d["bvps"] < 10:
+        reasons.append("每股淨值低於 10 元")
+    if not is_fin and d["debt"] is not None and d["debt"] >= 70:
+        reasons.append("負債比超過 70%")
+    d["mine"] = 1 if reasons else 0
+
+    # ---- 綜合評分（0～100）----
+    clip = lambda v: max(0.0, min(100.0, v))
+    tech = 0.4 * (d["rs"] if d["rs"] is not None else 50) + 15 * (d["above20"] or 0) + 15 * (d["above60"] or 0) \
+        + 10 * (d["above240"] or 0) + 10 * (1 if d["ma"] == 1 else 0) + 10 * (1 if (d["dif"] or 0) > 0 else 0)
+    chip = None
+    if inst:
+        i5 = sum_last("all", 5) or 0
+        base_vol = (d["vma20"] or 0) * 5
+        chip = 50 + (max(-35, min(35, i5 / base_vol * 200)) if base_vol else 0)
+        chip += 5 * ((d["t_streak"] or 0) >= 2) + 5 * ((d["f_streak"] or 0) >= 2) - 5 * ((d["mg_streak"] or 0) >= 3)
+        if d["chg1000"] is not None:
+            chip += 5 if d["chg1000"] > 0 else -5 if d["chg1000"] < 0 else 0
+        chip = clip(chip)
+    subs = []
+    if d["roe"] is not None: subs.append(clip(d["roe"] * 5))
+    if d["gm"] is not None and not is_fin: subs.append(clip(d["gm"] * 2.5))
+    if d["rev_yoy"] is not None: subs.append(clip(50 + d["rev_yoy"] * 1.25))
+    if d["eps"] is not None: subs.append(100.0 if d["eps"] > 0 else 0.0)
+    if pe and pe > 0: subs.append(clip(100 - (pe - 10) * 3))
+    if d["yield"] is not None: subs.append(clip(d["yield"] * 16))
+    fund = sum(subs) / len(subs) if len(subs) >= 3 else None
+    vol60 = df["Return"].tail(60).std() * (252 ** 0.5) * 100
+    risk_s = 100.0
+    risk_s -= 50 if d["altered"] else 0
+    risk_s -= {"d": 30, "c": 20, "a": 10}.get(flag, 0)
+    risk_s -= 20 if d["eps"] is not None and d["eps"] < 0 else 0
+    risk_s -= 15 if not is_fin and d["debt"] is not None and d["debt"] > 60 else 0
+    risk_s -= 10 if not is_fin and d["cur"] is not None and d["cur"] < 100 else 0
+    risk_s -= 15 if ok(vol60) and vol60 > 60 else 0
+    risk_s -= 15 if d["dt_ratio"] is not None and d["dt_ratio"] > 50 else 0
+    risk_s -= 15 if (d["vma20"] or 0) < 100 else 0
+    risk_s = clip(risk_s)
+    parts = [x for x in (tech, chip, fund, risk_s) if x is not None]
+    d["s_tech"], d["s_chip"], d["s_fund"], d["s_risk"] = [None if x is None else round(x) for x in (tech, chip, fund, risk_s)]
+    d["s_total"] = round(sum(parts) / len(parts)) if parts else None
+    d["magic"] = None          # 神奇公式排名：所有股票算完後再填
+    d["_reasons"] = reasons
+    return d
 
 
 CHART_DAYS = 250   # 圖表與報告只顯示最近一年（約 250 個交易日）
@@ -686,7 +779,11 @@ def build_record(code, name, ticker, df, period, info=None, stats=None):
     summary = [code, name, market, round(close, 2), round(day_chg, 2),
                trend["value"] if trend else "", trend["tone"] if trend else "neutral", flag]
     extra = info.get("extra") or {}
-    srow = screen_row(code, name, market, full, flag, info.get("profile", {}), sig, extra)
+    sd = screen_row(code, name, market, full, flag, info.get("profile", {}), sig, extra)
+    srow = [sd.get(k) for k in SCREEN_COLS]
+    record["score"] = {k: sd.get(k) for k in ("s_tech", "s_chip", "s_fund", "s_risk", "s_total", "rs", "rel3m",
+                                               "ind_ret20", "ind_rank", "debt", "cur", "peg", "dt_ratio", "bias20", "above240", "ma240_up")}
+    record["score"]["mine"] = sd["_reasons"]
     profile = info.get("profile") or {}
     if profile.get("cap"):
         record["cap"] = round(profile["cap"], 1)
@@ -994,6 +1091,92 @@ def fetch_market_info(tdays: list, today: str):
     return att, disp, cand, news, meetings, profiles
 
 
+
+# ============================================================
+# 相對強度（RS）與產業強弱：要先看完全部股票才能排名
+# ============================================================
+def download_index(period: str):
+    """加權指數（^TWII）收盤價，用來比較「是否強於大盤」"""
+    try:
+        data = yf.download("^TWII", period=period, auto_adjust=True, progress=False)
+        if isinstance(data.columns, pd.MultiIndex):        # 新版 yfinance 的欄位有兩層
+            lvl = next(i for i in range(data.columns.nlevels) if "Close" in data.columns.get_level_values(i))
+            c = data.xs("Close", axis=1, level=lvl)
+        else:
+            c = data["Close"]
+        if isinstance(c, pd.DataFrame):
+            c = c.iloc[:, 0]
+        c = c.dropna()
+        if c.index.tz is not None:
+            c.index = c.index.tz_localize(None)
+        print(f"  加權指數：{len(c)} 天")
+        return c
+    except Exception as e:
+        print(f"  無法取得加權指數：{e}")
+        return None
+
+
+def relative_strength(code_ticker: dict, prices: dict, profiles: dict, index_close) -> dict:
+    """RS：參考美國 IBD 選股法，綜合近 3、6、9、12 個月漲幅（近 3 個月權重加倍），在全部股票中排名 1～99。"""
+    def ret(c, k):
+        return c.iloc[-1] / c.iloc[-1 - k] - 1 if len(c) > k and c.iloc[-1 - k] > 0 else None
+
+    raw, ret20, rel = {}, {}, {}
+    idx3 = ret(index_close, 63) if index_close is not None and len(index_close) > 63 else None
+    for code, t in code_ticker.items():
+        if t not in prices:
+            continue
+        c = prices[t]["Close"]
+        parts = [(w, ret(c, k)) for w, k in ((0.4, 63), (0.2, 126), (0.2, 189), (0.2, 250))]
+        parts = [(w, v) for w, v in parts if v is not None]
+        if parts and not code.startswith("00"):
+            raw[code] = sum(w * v for w, v in parts) / sum(w for w, _ in parts)
+        r20 = ret(c, 20)
+        if r20 is not None:
+            ret20[code] = r20 * 100
+        r3 = ret(c, 63)
+        if r3 is not None and idx3 is not None:
+            rel[code] = (r3 - idx3) * 100
+    out = {code: {} for code in code_ticker}
+    ranked = sorted(raw, key=raw.get)
+    for i, code in enumerate(ranked):
+        out[code]["rs"] = max(1, min(99, int(round((i + 1) / len(ranked) * 99))))
+    for code, v in rel.items():
+        out[code]["rel3m"] = v
+    # 產業強弱：產業內股票近 20 日漲幅的中位數
+    groups = {}
+    for code, v in ret20.items():
+        ind = (profiles.get(code) or {}).get("ind")
+        if ind and not code.startswith("00"):
+            groups.setdefault(ind, []).append(v)
+    med = {g: sorted(v)[len(v) // 2] for g, v in groups.items() if len(v) >= 3}
+    order = sorted(med, key=med.get, reverse=True)
+    for code in out:
+        ind = (profiles.get(code) or {}).get("ind")
+        if ind in med:
+            out[code]["ind_ret20"] = med[ind]
+            out[code]["ind_rank"] = order.index(ind) + 1
+    print(f"  RS 排名 {len(ranked)} 檔、產業 {len(order)} 個（最強：{'、'.join(order[:3])}）")
+    return out
+
+
+def magic_formula(screen_rows: list):
+    """神奇公式（葛林布雷）：ROE 高（賺錢能力）＋ 本益比低（便宜），兩個排名相加，越前面越好。不含金融股與 ETF。"""
+    C = {c: i for i, c in enumerate(SCREEN_COLS)}
+    cand = [r for r in screen_rows if r[C["roe"]] and r[C["roe"]] > 0 and r[C["pe"]] and r[C["pe"]] > 0
+            and r[C["ind"]] != "金融保險" and not r[C["code"]].startswith("00")]
+    by_roe = sorted(cand, key=lambda r: -r[C["roe"]])
+    by_ey = sorted(cand, key=lambda r: r[C["pe"]])
+    rank = {id(r): 0 for r in cand}
+    for i, r in enumerate(by_roe):
+        rank[id(r)] += i
+    for i, r in enumerate(by_ey):
+        rank[id(r)] += i
+    ordered = sorted(cand, key=lambda r: rank[id(r)])
+    for i, r in enumerate(ordered):
+        r[C["magic"]] = max(1, min(99, int(round((1 - i / len(ordered)) * 99))))
+    return len(ordered)
+
 # ============================================================
 # 8. 本機預覽（網頁要用 http 才能讀 JSON）
 # ============================================================
@@ -1073,6 +1256,15 @@ def main():
     revenue = fundamentals.fetch_revenue(STATE)
     financials = fundamentals.fetch_financials()
     holders = fundamentals.fetch_holders(STATE)
+    risk = fundamentals.fetch_risk(tdays[-1] if tdays else "")
+    print("計算相對強度與產業強弱…")
+    code_ticker = {}
+    for code, (_, suffix) in universe.items():
+        cands = [code + suffix] if suffix else [code + ".TW", code + ".TWO"]
+        t = next((t for t in cands if t in prices), None)
+        if t:
+            code_ticker[code] = t
+    rs_map = relative_strength(code_ticker, prices, profiles, download_index(args.period))
     stats = BacktestStats()
 
     rows, dates, failed, alert_notes, screen_rows = [], set(), [], {}, []
@@ -1088,7 +1280,8 @@ def main():
             "news": news.get(code, [])[:15],
             "profile": profiles.get(code, {}),
             "extra": {"inst": inst.get(code), "margin": margin.get(code), "val": valuation.get(code),
-                      "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code)},
+                      "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code),
+                      "risk": risk.get(code), "rs": rs_map.get(code)},
         }
         try:
             record, summary, last_date, srow = build_record(code, name or code, ticker, prices[ticker], args.period, info, stats)
@@ -1120,6 +1313,7 @@ def main():
     (SITE / "list.json").write_text(
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     screen_rows.sort(key=lambda r: r[0])
+    n_magic = magic_formula(screen_rows)
     (SITE / "screen.json").write_text(json.dumps(
         {"updated": listing["updated"], "date": listing["date"], "cols": SCREEN_COLS, "rows": screen_rows,
          "bt": stats.result(), "bt_from": tdays[0] if tdays else "", "bt_to": tdays[-21] if len(tdays) > 21 else ""},
@@ -1133,7 +1327,12 @@ def main():
            f"有股本資料 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('cap')] is not None)} 檔、"
            f"今日創一年新高 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nh240')] == 1)} 檔、"
            f"今日破 60 日新低 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nl60')] == 1)} 檔｜"
-           f"法人 {len(inst)}、融資券 {len(margin)}、本益比 {len(valuation)}、月營收 {len(revenue)}、財報 {len(financials)}、大戶 {len(holders)} 檔")
+           f"法人 {len(inst)}、融資券 {len(margin)}、本益比 {len(valuation)}、月營收 {len(revenue)}、財報 {len(financials)}、大戶 {len(holders)} 檔｜"
+           f"RS {sum(1 for r in screen_rows if r[SCREEN_COLS.index('rs')] is not None)}、"
+           f"地雷股 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('mine')] == 1)}、"
+           f"負債比 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('debt')] is not None)}、"
+           f"當沖 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('dt_ratio')] is not None)}、"
+           f"神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))

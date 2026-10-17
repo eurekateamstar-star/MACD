@@ -126,6 +126,7 @@
   </div>
   <div class="opts">
     <label><input type="checkbox" id="noetf" checked>只看個股（排除 ETF）</label>
+    <label><input type="checkbox" id="nomine" checked>排除地雷股</label>
     <label><input type="checkbox" id="noalert">排除處置 / 注意股</label>
     <label><input type="checkbox" id="onlywatch">只看我的自選股</label>
   </div>
@@ -140,6 +141,7 @@
   <div class="list" id="list"></div>
   <button class="more" id="more" hidden>顯示更多</button>
 
+  <p class="note">「排除地雷股」會去掉：變更交易（含全額交割）、管理股票、停止交易、處置中、今年累計虧損、每股淨值低於 10 元、負債比超過 70%（金融股除外）。</p>
   <p class="note">選股結果是依照最近一個交易日收盤後的資料計算，只是幫你縮小研究範圍，不代表買賣建議。點任一檔看完整報告與白話解釋。</p>
   <footer id="foot">僅供學習參考，不構成投資建議</footer>
 </div>
@@ -152,6 +154,27 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<':
 const YESNO = [[1, '是'], [0, '否']];
 const CROSS = [[1, '黃金交叉（近 3 日）'], [-1, '死亡交叉（近 3 日）']];
 const FIELDS = [
+  { g: '綜合評分', k: 's_total', label: '總分', type: 'num', unit: '分', def: 75, hint: '技術、籌碼、基本面、風險四項分數的平均（0～100）' },
+  { g: '綜合評分', k: 's_tech', label: '技術面分數', type: 'num', unit: '分', def: 70, hint: 'RS 排名、是否站上月線 / 季線 / 年線、均線排列、MACD' },
+  { g: '綜合評分', k: 's_chip', label: '籌碼面分數', type: 'num', unit: '分', def: 70, hint: '法人近 5 日買超力道、連買天數、融資變化、大戶增減' },
+  { g: '綜合評分', k: 's_fund', label: '基本面分數', type: 'num', unit: '分', def: 70, hint: 'ROE、毛利率、營收年增率、是否獲利、本益比、殖利率' },
+  { g: '綜合評分', k: 's_risk', label: '風險分數（越高越安全）', type: 'num', unit: '分', def: 80, hint: '扣分項目：變更交易、處置 / 注意、虧損、高負債、波動大、當沖多、成交量太少' },
+  { g: '綜合評分', k: 'magic', label: '神奇公式排名', type: 'num', unit: 'PR', def: 90, hint: 'ROE 高＋本益比低的綜合排名，99 = 最前面（不含金融股）' },
+  { g: '相對強度', k: 'rs', label: 'RS 強度排名', type: 'num', unit: 'PR', def: 80, hint: '近一年漲幅（近 3 個月加重）在全部股票中的排名，99 = 最強' },
+  { g: '相對強度', k: 'rel3m', label: '近 3 個月贏大盤', type: 'num', unit: '%', def: 10, hint: '近 3 個月漲幅減掉加權指數漲幅，正數 = 強於大盤' },
+  { g: '相對強度', k: 'ind_rank', label: '產業強弱排名', type: 'num', unit: '名', def: 5, op: 'le', hint: '所屬產業近 20 日漲幅排名，1 = 最強的產業' },
+  { g: '相對強度', k: 'ind_ret20', label: '所屬產業近 20 日漲幅', type: 'num', unit: '%', def: 5, hint: '同產業股票漲幅的中位數' },
+  { g: '風險 / 地雷', k: 'mine', label: '地雷股', type: 'enum', opts: [[1, '是'], [0, '否']], hint: '變更交易（全額交割）、管理股票、停止交易、處置中、虧損、淨值低於 10 元、負債比超過 70%' },
+  { g: '風險 / 地雷', k: 'altered', label: '變更交易 / 管理股票', type: 'enum', opts: YESNO, hint: '包含全額交割、分盤交易、管理股票、停止交易' },
+  { g: '風險 / 地雷', k: 'dt_ratio', label: '當沖比例（上市）', type: 'num', unit: '%', def: 40, op: 'le', hint: '當沖成交股數 ÷ 成交量，太高代表短線客多、股價容易暴漲暴跌' },
+  { g: '財報 / 評價', k: 'debt', label: '負債比', type: 'num', unit: '%', def: 50, op: 'le', hint: '負債 ÷ 資產。一般公司超過 60% 要留意（金融業本來就高）' },
+  { g: '財報 / 評價', k: 'cur', label: '流動比率', type: 'num', unit: '%', def: 150, hint: '流動資產 ÷ 流動負債，150% 以上代表短期還錢能力好' },
+  { g: '財報 / 評價', k: 'bvps', label: '每股淨值', type: 'num', unit: '元', def: 10, hint: '低於 10 元（面額）代表公司虧掉部分資本' },
+  { g: '財報 / 評價', k: 'peg', label: 'PEG（本益成長比）', type: 'num', unit: '', def: 1, op: 'le', hint: '本益比 ÷ 今年營收成長率（以營收代替獲利成長估算），小於 1 代表便宜又在成長' },
+  { g: '均線', k: 'above240', label: '站上年線（MA240）', type: 'enum', opts: YESNO, hint: '收盤價在 240 日均線之上，長期趨勢偏多' },
+  { g: '均線', k: 'ma240_up', label: '年線上揚', type: 'enum', opts: YESNO, hint: '年線比一個月前高' },
+  { g: '均線', k: 'bias20', label: '月線乖離率', type: 'num', unit: '%', def: 10, hint: '(股價 − 月線) ÷ 月線。太高代表漲多容易拉回，太低代表跌深可能反彈' },
+  { g: '均線', k: 'bias60', label: '季線乖離率', type: 'num', unit: '%', def: 20, hint: '(股價 − 季線) ÷ 季線' },
   { g: '價格', k: 'close', label: '收盤價', type: 'num', unit: '元', def: 50, hint: '最近一個交易日的收盤價' },
   { g: '價格', k: 'chg', label: '今日漲跌幅', type: 'num', unit: '%', def: 3, hint: '跟前一天比漲跌了多少' },
   { g: '價格', k: 'ret5', label: '5 日漲跌幅', type: 'num', unit: '%', def: 5, hint: '最近一週的漲跌' },
@@ -241,6 +264,30 @@ const F = Object.fromEntries(FIELDS.map(f => [f.k, f]));
 
 // ---------- 一鍵策略 ----------
 const PRESETS = [
+  { grp: '評分', name: '高分好股', desc: '總分 75 分以上，而且不是地雷股', sort: 's_total', c: [{ k: 's_total', op: 'ge', a: 75 }] },
+  { grp: '評分', name: '技術＋籌碼雙強', desc: '技術面 75 分以上、籌碼面 70 分以上', sort: 's_chip',
+    c: [{ k: 's_tech', op: 'ge', a: 75 }, { k: 's_chip', op: 'ge', a: 70 }] },
+  { grp: '評分', name: '體質最好', desc: '基本面 75 分以上、風險分數 85 分以上', sort: 's_fund',
+    c: [{ k: 's_fund', op: 'ge', a: 75 }, { k: 's_risk', op: 'ge', a: 85 }] },
+  { grp: '大師', name: '葛拉漢價值股', desc: '價值投資之父：本益比 15 以下、淨值比 1.5 以下、流動比率 200% 以上、負債比 50% 以下、有配息', sort: 'pe', dir: 1,
+    c: [{ k: 'pe', op: 'bt', a: 0.01, b: 15 }, { k: 'pb', op: 'le', a: 1.5 }, { k: 'cur', op: 'ge', a: 200 }, { k: 'debt', op: 'le', a: 50 }, { k: 'yield', op: 'ge', a: 0.01 }] },
+  { grp: '大師', name: '巴菲特好公司', desc: '股神：ROE 15% 以上、負債比 50% 以下、毛利率 30% 以上、有獲利', sort: 'roe',
+    c: [{ k: 'roe', op: 'ge', a: 15 }, { k: 'debt', op: 'le', a: 50 }, { k: 'gm', op: 'ge', a: 30 }, { k: 'eps', op: 'ge', a: 0.01 }] },
+  { grp: '大師', name: '彼得林區成長股', desc: '傳奇基金經理人：PEG 1 以下、今年營收成長 15% 以上、負債比 50% 以下', sort: 'peg', dir: 1,
+    c: [{ k: 'peg', op: 'le', a: 1 }, { k: 'rev_cum_yoy', op: 'ge', a: 15 }, { k: 'debt', op: 'le', a: 50 }] },
+  { grp: '大師', name: '神奇公式', desc: '葛林布雷：賺錢能力（ROE）高又便宜（本益比低）的綜合排名前 10%', sort: 'magic',
+    c: [{ k: 'magic', op: 'ge', a: 90 }] },
+  { grp: '大師', name: 'IBD 強勢成長', desc: '歐尼爾 CAN SLIM 精神：RS 80 以上、營收年增 20% 以上、接近一年高點', sort: 'rs',
+    c: [{ k: 'rs', op: 'ge', a: 80 }, { k: 'rev_yoy', op: 'ge', a: 20 }, { k: 'dist_hi', op: 'ge', a: -15 }] },
+  { grp: '強勢', name: 'RS 前 10%', desc: '近一年相對強度排名前 10% 的強勢股', sort: 'rs', c: [{ k: 'rs', op: 'ge', a: 90 }] },
+  { grp: '強勢', name: '強於大盤', desc: '近 3 個月漲幅贏加權指數 10% 以上，且站上季線', sort: 'rel3m',
+    c: [{ k: 'rel3m', op: 'ge', a: 10 }, { k: 'above60', op: 'eq', a: 1 }] },
+  { grp: '強勢', name: '強勢產業領頭羊', desc: '所屬產業排名前 3，且個股 RS 70 以上', sort: 'rs',
+    c: [{ k: 'ind_rank', op: 'le', a: 3 }, { k: 'rs', op: 'ge', a: 70 }] },
+  { grp: '強勢', name: '長多格局', desc: '站上年線、年線上揚、站上季線', sort: 'rs',
+    c: [{ k: 'above240', op: 'eq', a: 1 }, { k: 'ma240_up', op: 'eq', a: 1 }, { k: 'above60', op: 'eq', a: 1 }] },
+  { grp: '強勢', name: '高點量縮整理', desc: '距一年高點 10% 以內、量比 0.7 以下、站上季線（蓄勢待發）', sort: 'dist_hi',
+    c: [{ k: 'dist_hi', op: 'ge', a: -10 }, { k: 'vr', op: 'le', a: 0.7 }, { k: 'above60', op: 'eq', a: 1 }] },
   { grp: '技術面', name: '持續創新高', desc: '近 10 日有 3 天以上創 60 日新高，今天也是', sort: 'nh_days',
     c: [{ k: 'nh_days', op: 'ge', a: 3 }, { k: 'nh60', op: 'eq', a: 1 }] },
   { grp: '技術面', name: '創一年新高', desc: '收盤價是最近一年最高', sort: 'chg', c: [{ k: 'nh240', op: 'eq', a: 1 }] },
@@ -298,7 +345,7 @@ const PRESETS = [
     c: [{ k: 'yield', op: 'ge', a: 4 }, { k: 'roe', op: 'ge', a: 10 }, { k: 'pe', op: 'bt', a: 0.01, b: 20 }] },
 ];
 
-const SORTS = [['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 日漲跌'], ['vol', '成交量'], ['vr', '量比'],
+const SORTS = [['s_total', '總分'], ['s_tech', '技術分'], ['s_chip', '籌碼分'], ['s_fund', '基本面分'], ['rs', 'RS 排名'], ['rel3m', '贏大盤'], ['magic', '神奇公式'], ['peg', 'PEG'], ['debt', '負債比'], ['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 日漲跌'], ['vol', '成交量'], ['vr', '量比'],
   ['amt', '成交金額'], ['cap', '股本'], ['mcap', '市值'], ['f_net', '外資買超'], ['t_net', '投信買超'], ['i_net', '法人合計'],
   ['f_streak', '外資連買天數'], ['t_streak', '投信連買天數'], ['i_ratio', '法人佔比'], ['mg_chg', '融資增減'], ['ss_ratio', '券資比'],
   ['chg1000', '大戶增減'], ['rev_yoy', '營收年增率'], ['rev_yoy_streak', '營收連續成長'], ['pe', '本益比'], ['yield', '殖利率'],
@@ -307,7 +354,7 @@ const SORTS = [['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 �
 
 // ---------- 狀態 ----------
 let COLS = {}, ROWS = [], SHOWN = 100;
-let S = { conds: [], preset: null, noetf: true, noalert: false, sort: 'chg', dir: -1 };
+let S = { conds: [], preset: null, noetf: true, noalert: false, nomine: true, sort: 'chg', dir: -1 };
 try { const v = JSON.parse(localStorage.getItem('screen')); if (v && Array.isArray(v.conds)) S = Object.assign(S, v); } catch (e) {}
 const save = () => { try { localStorage.setItem('screen', JSON.stringify(S)); } catch (e) {} };
 const val = (row, k) => row[COLS[k]];
@@ -429,6 +476,7 @@ $('save').addEventListener('click', () => {
 $('onlywatch').addEventListener('change', (e) => { S.onlywatch = e.target.checked; SHOWN = 100; save(); renderResults(); });
 $('clear').addEventListener('click', () => { S.conds = []; S.preset = null; SHOWN = 100; save(); renderAll(); });
 $('noetf').addEventListener('change', (e) => { S.noetf = e.target.checked; SHOWN = 100; save(); renderResults(); });
+$('nomine').addEventListener('change', (e) => { S.nomine = e.target.checked; SHOWN = 100; save(); renderResults(); });
 $('noalert').addEventListener('change', (e) => { S.noalert = e.target.checked; SHOWN = 100; save(); renderResults(); });
 $('sortk').addEventListener('change', (e) => { S.sort = e.target.value; save(); renderResults(); });
 $('sortd').addEventListener('click', () => { S.dir = -S.dir; save(); renderResults(); });
@@ -437,6 +485,7 @@ $('more').addEventListener('click', () => { SHOWN += 100; renderResults(); });
 function match(row) {
   if (S.noetf && String(val(row, 'code')).startsWith('00')) return false;
   if (S.noalert && val(row, 'flag')) return false;
+  if (S.nomine && val(row, 'mine') === 1) return false;
   if (S.onlywatch && !WATCH.includes(val(row, 'code'))) return false;
   for (const c of S.conds) {
     const v = val(row, c.k), f = F[c.k];
@@ -464,7 +513,7 @@ function fmtChip(k, v) {
 function renderResults() {
   $('sortk').innerHTML = SORTS.map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${t}</option>`).join('');
   $('sortd').textContent = S.dir < 0 ? '↓' : '↑';
-  $('noetf').checked = S.noetf; $('noalert').checked = S.noalert; $('onlywatch').checked = !!S.onlywatch;
+  $('noetf').checked = S.noetf; $('noalert').checked = S.noalert; $('onlywatch').checked = !!S.onlywatch; $('nomine').checked = S.nomine !== false;
   const hits = ROWS.filter(match);
   hits.sort((a, b) => {
     const x = val(a, S.sort), y = val(b, S.sort);
@@ -475,6 +524,7 @@ function renderResults() {
   const keys = [...new Set(S.conds.map(c => c.k).filter(k => !['market', 'ind', 'flag'].includes(k)))].slice(0, 5);
   if (!keys.includes(S.sort) && !['chg'].includes(S.sort)) keys.push(S.sort);
   if (!keys.includes('cap')) keys.push('cap');
+  if (!keys.includes('s_total')) keys.unshift('s_total');
   $('list').innerHTML = hits.length ? hits.slice(0, SHOWN).map(r => {
     const code = val(r, 'code'), chg = val(r, 'chg') ?? 0, flag = val(r, 'flag');
     const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat', arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '';

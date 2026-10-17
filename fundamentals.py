@@ -334,12 +334,18 @@ def fetch_financials() -> dict:
         b = bal.get(code, {})
         equity = _first(b, r"歸屬於母公司業主之權益", r"^權益總計$", r"^權益總額$")
         bvps = _first(b, r"每股參考淨值")
+        assets, liab = _first(b, r"^資產總計$", r"^資產總額$"), _first(b, r"^負債總計$", r"^負債總額$")
+        ca, cl = _first(b, r"^流動資產$"), _first(b, r"^流動負債$")
         rec = {"year": int(year + 1911) if year else None, "q": int(q) if q else None, "eps": eps, "bvps": bvps}
         if rev:
             rec["gm"] = round(gp / rev * 100, 2) if gp is not None else None
             rec["opm"] = round(op / rev * 100, 2) if op is not None else None
         if ni is not None and equity and q:
             rec["roe"] = round(ni * (4 / q) / equity * 100, 2)   # 換算成一年
+        if assets and liab is not None:
+            rec["debt"] = round(liab / assets * 100, 1)           # 負債比
+        if ca and cl:
+            rec["cur"] = round(ca / cl * 100, 0)                  # 流動比率
         out[code] = rec
     print(f"  財報：{len(out)} 檔")
     return out
@@ -396,4 +402,48 @@ def fetch_holders(state_dir: Path) -> dict:
             "weeks": [w for w in weeks if code in hist[w]],
             "hist1000": [hist[w][code][0] for w in weeks if code in hist[w]],
         }
+    return out
+
+
+# ============================================================
+# 7. 風險：變更交易（含全額交割）、管理股票、停止交易、當沖比例
+# ============================================================
+def fetch_risk(last_day: str) -> dict:
+    """→ {代號: {"altered": 變更交易/分盤, "managed": 管理股票, "suspended": 停止交易, "dt_shares": 當沖成交股數}}"""
+    out = {}
+    try:
+        for r in map(norm, get_json(f"{TWSE_OPEN}/exchangeReport/TWT85U", 60)):
+            code = code_of(r)
+            if CODE_RE.match(code):
+                out.setdefault(code, {})["altered"] = 1
+    except Exception as e:
+        print(f"  無法取得上市變更交易：{e}")
+    try:
+        yes = lambda v: str(v or "").strip() in ("Y", "Ｙ")
+        for r in map(norm, get_json(f"{TPEX_OPEN}/tpex_cmode", 60)):
+            code = code_of(r)
+            if not CODE_RE.match(code):
+                continue
+            d = out.setdefault(code, {})
+            if yes(r.get("AlteredTrading")) or yes(r.get("PeriodicTrading")):
+                d["altered"] = 1
+            if yes(r.get("ManagedStock")):
+                d["managed"] = 1
+            if yes(r.get("SuspensionOfTrading")):
+                d["suspended"] = 1
+    except Exception as e:
+        print(f"  無法取得上櫃變更交易：{e}")
+    n_flag = len(out)
+    if last_day:
+        try:
+            a, _ = _ymd(last_day)
+            j = get_json(f"https://www.twse.com.tw/rwd/zh/dayTrading/TWTB4U?date={a}&selectType=All&response=json", 60)
+            t = next(t for t in j.get("tables", []) if "成交量值" in str(t.get("title", "")))
+            for r in t["data"]:
+                code = str(r[0]).strip()
+                if CODE_RE.match(code):
+                    out.setdefault(code, {})["dt_shares"] = num(r[3])
+        except Exception as e:
+            print(f"  無法取得當沖資料：{e}")
+    print(f"  風險資料：變更交易 / 管理 / 停止交易 {n_flag} 檔，當沖資料 {sum(1 for v in out.values() if 'dt_shares' in v)} 檔")
     return out
