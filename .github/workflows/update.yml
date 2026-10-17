@@ -1,0 +1,55 @@
+# 每個交易日收盤後，自動產生台股報告並發佈到 GitHub Pages
+name: 更新台股報告
+
+on:
+  schedule:
+    # 週一到週五 UTC 07:30 = 台北時間 15:30（台股 13:30 收盤）
+    # GitHub 的排程有時會延遲幾十分鐘，屬正常現象
+    - cron: "30 7 * * 1-5"
+  workflow_dispatch:      # 允許在 Actions 頁面手動按「Run workflow」
+  push:
+    branches: [main]
+    paths: ["stocks.txt", "tw_stock_report.py"]   # 改了股票清單或程式就馬上更新
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: 取得程式碼
+        uses: actions/checkout@v4
+
+      - name: 安裝 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 產生報告
+        run: python tw_stock_report.py --no-open
+
+      - name: 設定 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上傳網站檔案
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: 發佈到 GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
