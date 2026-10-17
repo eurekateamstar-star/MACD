@@ -42,7 +42,7 @@
   .pgroup .preset { flex: none; white-space: nowrap; }
   .preset.mine { border-style: dashed; }
   .preset .x { margin-left: 6px; opacity: .6; }
-  .bt { margin: 8px 4px 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+  .bt { margin: 8px 0 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
   .bt-row { display: flex; gap: 8px; margin-top: 6px; }
   .bt-row div { flex: 1; background: var(--soft); border-radius: 8px; padding: 6px 8px; text-align: center; }
   .bt-row b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
@@ -52,6 +52,59 @@
   .preset-desc { font-size: 13px; color: var(--muted); margin: 8px 4px 0; min-height: 1em; }
   .preset-desc b { color: var(--ink); }
 
+  /* 步驟標題 */
+  .step { display: flex; align-items: center; gap: 8px; margin: 22px 2px 10px; }
+  .step .num { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--ink); color: var(--bg);
+               display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  .step b { font-size: 17px; }
+  .step small { margin-left: auto; color: var(--muted); font-size: 12px; }
+  /* 策略分類 */
+  .cats { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .cats::-webkit-scrollbar { display: none; }
+  .cat { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 7px 13px;
+         font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .cat.on { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+  .cat-desc { color: var(--muted); font-size: 13px; margin: 8px 4px; }
+  .pgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pcard { position: relative; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 12px;
+           padding: 10px 12px; cursor: pointer; }
+  .pcard b { display: block; font-size: 15px; }
+  .pcard span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 3px; }
+  .pcard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .pcard.on b { color: var(--accent); }
+  .pcard .x { position: absolute; top: 6px; right: 8px; color: var(--muted); font-size: 16px; padding: 0 4px; }
+  .pempty { grid-column: 1 / -1; color: var(--muted); font-size: 14px; text-align: center; padding: 16px; }
+  /* 篩選範圍 */
+  .scope { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 2px 0; }
+  .scope-label { font-size: 13px; color: var(--muted); margin-right: 2px; }
+  .tog input { display: none; }
+  .tog span { display: inline-block; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+              border-radius: 99px; padding: 5px 11px; font-size: 13px; cursor: pointer; }
+  .tog input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--soft); font-weight: 600; }
+  .tog input:checked + span::before { content: "✓ "; }
+  .add-btn { flex: 1; border: 1px dashed var(--accent) !important; color: var(--accent) !important; font-weight: 600; padding: 10px !important; }
+  /* 新增條件視窗 */
+  .sheet { position: fixed; inset: 0; z-index: 50; }
+  .sheet-bg { position: absolute; inset: 0; background: rgba(0,0,0,.4); }
+  .sheet-panel { position: absolute; left: 0; right: 0; bottom: 0; max-width: 760px; margin: 0 auto; max-height: 82vh;
+                 background: var(--bg); border-radius: 16px 16px 0 0; display: flex; flex-direction: column; padding: 0 14px 14px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 2px 8px; }
+  .sheet-head b { font-size: 17px; }
+  .sheet-head button { border: 0; background: var(--soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 17px; }
+  #fsearch { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; font-size: 16px; margin-bottom: 8px; }
+  #flist { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .fgroup { border-bottom: 1px solid var(--line); }
+  .fgroup summary { list-style: none; cursor: pointer; padding: 12px 4px; font-weight: 600; display: flex; justify-content: space-between; }
+  .fgroup summary::-webkit-details-marker { display: none; }
+  .fgroup summary small { color: var(--muted); font-weight: 400; }
+  .fgroup[open] summary small::after { content: " ▲"; } .fgroup:not([open]) summary small::after { content: " ▼"; }
+  .fitem { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); background: var(--panel);
+           padding: 10px 12px; cursor: pointer; }
+  .fitem:first-of-type { border-top: 0; }
+  .fitem b { font-size: 15px; font-weight: 500; }
+  .fitem span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .fitem.added b::after { content: "（已加入）"; color: var(--muted); font-size: 12px; }
+  .fgroup .items { border-radius: 10px; overflow: hidden; margin: 0 0 10px; border: 1px solid var(--line); }
   /* 條件 */
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
   .cond { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -112,25 +165,29 @@
   <h1>智慧選股</h1>
   <div class="meta" id="meta">載入中…</div>
 
-  <h2><span>一鍵策略</span><small>左右滑動看更多</small></h2>
-  <div id="presets"></div>
+  <div class="step"><span class="num">1</span><b>選一個策略</b><small>先點分類，再點策略</small></div>
+  <div class="cats" id="cats"></div>
+  <div class="cat-desc" id="catdesc"></div>
+  <div class="pgrid" id="presets"></div>
+
+  <div class="step"><span class="num">2</span><b>調整條件</b><small>全部條件都要符合</small></div>
   <div class="preset-desc" id="pdesc"></div>
   <div class="bt" id="bt" hidden></div>
-
-  <h2><span>我的條件</span><small>全部條件都要符合</small></h2>
   <div class="box" id="conds"></div>
   <div class="add-row">
-    <select id="add"><option value="">＋ 新增條件…</option></select>
-    <button id="save" class="save-btn">儲存</button>
+    <button id="addbtn" class="add-btn">＋ 新增條件</button>
+    <button id="save" class="save-btn">儲存策略</button>
     <button id="clear">清除</button>
   </div>
-  <div class="opts">
-    <label><input type="checkbox" id="noetf" checked>只看個股（排除 ETF）</label>
-    <label><input type="checkbox" id="nomine" checked>排除地雷股</label>
-    <label><input type="checkbox" id="noalert">排除處置 / 注意股</label>
-    <label><input type="checkbox" id="onlywatch">只看我的自選股</label>
+  <div class="scope">
+    <span class="scope-label">篩選範圍</span>
+    <label class="tog"><input type="checkbox" id="noetf" checked><span>排除 ETF</span></label>
+    <label class="tog"><input type="checkbox" id="nomine" checked><span>排除地雷股</span></label>
+    <label class="tog"><input type="checkbox" id="noalert"><span>排除處置 / 注意</span></label>
+    <label class="tog"><input type="checkbox" id="onlywatch"><span>只看自選股</span></label>
   </div>
 
+  <div class="step"><span class="num">3</span><b>看結果</b><small>點股票看完整報告</small></div>
   <div class="res-head">
     <div class="count" id="count">—</div>
     <div class="sort">
@@ -144,6 +201,15 @@
   <p class="note">「排除地雷股」會去掉：變更交易（含全額交割）、管理股票、停止交易、處置中、今年累計虧損、每股淨值低於 10 元、負債比超過 70%（金融股除外）。</p>
   <p class="note">選股結果是依照最近一個交易日收盤後的資料計算，只是幫你縮小研究範圍，不代表買賣建議。點任一檔看完整報告與白話解釋。</p>
   <footer id="foot">僅供學習參考，不構成投資建議</footer>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-bg" id="sheetbg"></div>
+  <div class="sheet-panel" role="dialog" aria-label="新增條件">
+    <div class="sheet-head"><b>新增條件</b><button id="sheetclose" aria-label="關閉">×</button></div>
+    <input id="fsearch" type="search" autocomplete="off" placeholder="搜尋，例如 MACD、殖利率、投信、新高">
+    <div id="flist"></div>
+  </div>
 </div>
 
 <script>
@@ -345,6 +411,37 @@ const PRESETS = [
     c: [{ k: 'yield', op: 'ge', a: 4 }, { k: 'roe', op: 'ge', a: 10 }, { k: 'pe', op: 'bt', a: 0.01, b: 20 }] },
 ];
 
+// ---------- 策略分類（同一個策略可以出現在多個分類）----------
+const CATS = [
+  { id: 'new', name: '⭐ 新手推薦', desc: '比較穩健、好理解的策略，適合剛開始學的人。',
+    items: ['高分好股', '存股好選擇', '巴菲特好公司', '營收創新高', '長多格局', '投信連買'] },
+  { id: 'trend', name: '📈 趨勢強勢', desc: '已經在漲、比大盤強的股票。「強者恆強」的順勢操作。',
+    items: ['持續創新高', '創一年新高', 'RS 前 10%', '強於大盤', '強勢產業領頭羊', '長多格局', '多頭排列', '高點量縮整理', 'IBD 強勢成長'] },
+  { id: 'break', name: '🚀 突破訊號', desc: '技術面剛出現轉強或突破的訊號，偏短中線。',
+    items: ['均線糾結突破', '箱型突破', '爆量長紅', '跳空上漲', '突破布林上緣', '月線黃金交叉', 'MACD 黃金交叉', 'MACD 紅柱放大', 'KD 低檔黃金交叉', '週 KD 黃金交叉'] },
+  { id: 'weak', name: '📉 弱勢反彈', desc: '正在下跌或跌深的股票，可以用來避開，或觀察是否反彈。',
+    items: ['破底', '持續破底', 'RSI 超賣'] },
+  { id: 'chip', name: '💰 籌碼', desc: '跟著法人、大戶的腳步，看誰在買。',
+    items: ['投信連買', '外資連買', '法人大買', '外資買超權值股', '籌碼安定', '大戶增加', '軋空候選', '營收成長＋投信買'] },
+  { id: 'fund', name: '🏦 基本面・存股', desc: '公司賺錢、成長、便宜或配息好，適合中長期。',
+    items: ['營收創新高', '營收連續成長', '高殖利率', '低本益比', '高 ROE', '股價低於淨值', '存股好選擇', '體質最好'] },
+  { id: 'master', name: '🎓 大師選股', desc: '知名投資大師的選股邏輯（簡化版），邊用邊學他們的想法。',
+    items: ['葛拉漢價值股', '巴菲特好公司', '彼得林區成長股', '神奇公式', 'IBD 強勢成長'] },
+  { id: 'mix', name: '🧩 綜合', desc: '結合多個面向的評分或組合條件。',
+    items: ['高分好股', '技術＋籌碼雙強', '體質最好', '小股本放量', '大型股站上月線', '營收成長＋投信買'] },
+  { id: 'mine', name: '📁 我的策略', desc: '你自己儲存的策略（存在這支手機上）。在步驟 2 設好條件後按「儲存策略」。', items: [] },
+];
+// 條件分類（新增條件時顯示）
+const GROUP_MAP = {
+  '綜合評分': '評分與強弱', '相對強度': '評分與強弱', '價格': '價格與漲跌', '新高 / 破底': '新高與破底',
+  '型態': 'K 線型態與突破', '均線': '均線', 'MACD': 'MACD・KD・RSI', 'KDJ / RSI': 'MACD・KD・RSI',
+  '成交量': '成交量', '法人籌碼': '三大法人', '信用 / 大戶': '融資券與大戶', '營收': '月營收',
+  '財報 / 評價': '財報與評價', '股本 / 市值': '股本與風險', '風險 / 地雷': '股本與風險', '其他': '市場・產業・警示',
+};
+const GROUP_ORDER = ['評分與強弱', '價格與漲跌', '新高與破底', 'K 線型態與突破', '均線', 'MACD・KD・RSI', '成交量',
+  '三大法人', '融資券與大戶', '月營收', '財報與評價', '股本與風險', '市場・產業・警示'];
+const groupOf = (f) => GROUP_MAP[f.g] || f.g;
+
 const SORTS = [['s_total', '總分'], ['s_tech', '技術分'], ['s_chip', '籌碼分'], ['s_fund', '基本面分'], ['rs', 'RS 排名'], ['rel3m', '贏大盤'], ['magic', '神奇公式'], ['peg', 'PEG'], ['debt', '負債比'], ['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 日漲跌'], ['vol', '成交量'], ['vr', '量比'],
   ['amt', '成交金額'], ['cap', '股本'], ['mcap', '市值'], ['f_net', '外資買超'], ['t_net', '投信買超'], ['i_net', '法人合計'],
   ['f_streak', '外資連買天數'], ['t_streak', '投信連買天數'], ['i_ratio', '法人佔比'], ['mg_chg', '融資增減'], ['ss_ratio', '券資比'],
@@ -354,7 +451,7 @@ const SORTS = [['s_total', '總分'], ['s_tech', '技術分'], ['s_chip', '籌�
 
 // ---------- 狀態 ----------
 let COLS = {}, ROWS = [], SHOWN = 100;
-let S = { conds: [], preset: null, noetf: true, noalert: false, nomine: true, sort: 'chg', dir: -1 };
+let S = { conds: [], preset: null, cat: 'new', noetf: true, noalert: false, nomine: true, sort: 'chg', dir: -1 };
 try { const v = JSON.parse(localStorage.getItem('screen')); if (v && Array.isArray(v.conds)) S = Object.assign(S, v); } catch (e) {}
 const save = () => { try { localStorage.setItem('screen', JSON.stringify(S)); } catch (e) {} };
 const val = (row, k) => row[COLS[k]];
@@ -368,25 +465,34 @@ function applyStrategy(key, p) {
   if (S.preset === key) { S.preset = null; S.conds = []; }
   else { S.preset = key; S.conds = p.c.map(c => Object.assign({}, c)); S.sort = p.sort || 'chg'; S.dir = p.dir || -1; }
   SHOWN = 100; save(); renderAll();
-  $('count').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('pdesc').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderPresets() {
   const mine = loadMine();
-  const groups = [...new Set(PRESETS.map(p => p.grp))];
-  let html = '';
-  if (mine.length) {
-    html += `<div class="pgroup"><b>我的</b><div class="presets">${mine.map((p, i) =>
-      `<button class="preset mine ${S.preset === 'm' + i ? 'on' : ''}" data-m="${i}">${esc(p.name)}<span class="x" data-del="${i}">×</span></button>`).join('')}</div></div>`;
+  const idx = Object.fromEntries(PRESETS.map((p, i) => [p.name, i]));
+  if (!CATS.some(c => c.id === S.cat)) S.cat = 'new';
+  $('cats').innerHTML = CATS.map(c => `<button class="cat ${S.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${esc(c.name)}${c.id === 'mine' && mine.length ? ` ${mine.length}` : ''}</button>`).join('');
+  const cat = CATS.find(c => c.id === S.cat);
+  $('catdesc').textContent = cat.desc;
+  let cards;
+  if (cat.id === 'mine') {
+    cards = mine.length ? mine.map((p, i) => `<button class="pcard ${S.preset === 'm' + i ? 'on' : ''}" data-m="${i}">
+        <span class="x" data-del="${i}" aria-label="刪除">×</span><b>${esc(p.name)}</b><span>${esc(describe(p.c))}</span></button>`).join('')
+      : '<div class="pempty">還沒有自己的策略。<br>在步驟 2 設好條件後，按「儲存策略」。</div>';
+  } else {
+    cards = cat.items.filter(n => n in idx).map(n => { const i = idx[n], p = PRESETS[i];
+      return `<button class="pcard ${S.preset === i ? 'on' : ''}" data-i="${i}"><b>${esc(p.name)}</b><span>${esc(p.desc)}</span></button>`; }).join('');
   }
-  html += groups.map(g => `<div class="pgroup"><b>${esc(g)}</b><div class="presets">${PRESETS.map((p, i) => p.grp === g
-    ? `<button class="preset ${S.preset === i ? 'on' : ''}" data-i="${i}">${esc(p.name)}</button>` : '').join('')}</div></div>`).join('');
-  $('presets').innerHTML = html;
-  document.querySelectorAll('.pgroup .preset.on').forEach(el => {   // 選到的策略捲到看得見的位置
-    const row = el.parentElement; row.scrollLeft = Math.max(0, el.offsetLeft - row.offsetLeft - 40);
-  });
-  document.querySelectorAll('.preset[data-i]').forEach(b => b.addEventListener('click', () => applyStrategy(+b.dataset.i, PRESETS[+b.dataset.i])));
-  document.querySelectorAll('.preset[data-m]').forEach(b => b.addEventListener('click', (e) => {
+  $('presets').innerHTML = cards;
+  document.querySelectorAll('.cat').forEach(b => b.addEventListener('click', () => {
+    S.cat = b.dataset.cat; save(); renderPresets();
+    b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }));
+  const active = document.querySelector('.cat.on');
+  if (active) active.parentElement.scrollLeft = Math.max(0, active.offsetLeft - active.parentElement.offsetLeft - 40);
+  document.querySelectorAll('.pcard[data-i]').forEach(b => b.addEventListener('click', () => applyStrategy(+b.dataset.i, PRESETS[+b.dataset.i])));
+  document.querySelectorAll('.pcard[data-m]').forEach(b => b.addEventListener('click', (e) => {
     const i = +b.dataset.m;
     if (e.target.dataset.del != null) {
       if (!confirm(`刪除「${mine[i].name}」？`)) return;
@@ -396,7 +502,7 @@ function renderPresets() {
   }));
   const cur = typeof S.preset === 'number' ? PRESETS[S.preset] : (typeof S.preset === 'string' ? mine[+S.preset.slice(1)] : null);
   $('pdesc').innerHTML = cur ? `<b>${esc(cur.name)}：</b>${esc(cur.desc || describe(cur.c))}（再點一次取消）`
-    : '點一個策略，條件會自動填好，你也可以再自己調整，按「儲存」存成自己的策略。';
+    : '還沒選策略。可以在步驟 1 點一個策略，或直接按「＋ 新增條件」自己組合。';
   const st = cur && BT[cur.name], base = BT._base;
   if (st && base) {
     const col = (v) => v >= 0 ? 'up' : 'down';
@@ -436,7 +542,7 @@ function condCtrl(c, i) {
 
 function renderConds() {
   const box = $('conds');
-  if (!S.conds.length) { box.innerHTML = '<div class="empty-cond">還沒有條件。點上面的一鍵策略，或從下面新增條件。</div>'; return; }
+  if (!S.conds.length) { box.innerHTML = '<div class="empty-cond">還沒有條件。點步驟 1 的策略，或按下面的「＋ 新增條件」。</div>'; return; }
   box.innerHTML = S.conds.map((c, i) => {
     const f = F[c.k];
     return `<div class="cond"><div class="label">${esc(f.label)}</div><button class="del" data-del="${i}" aria-label="刪除">×</button>
@@ -454,17 +560,39 @@ function renderConds() {
   }));
 }
 
-function renderAdd() {
-  const groups = [...new Set(FIELDS.map(f => f.g))];
-  $('add').innerHTML = '<option value="">＋ 新增條件…</option>' + groups.map(g =>
-    `<optgroup label="${esc(g)}">${FIELDS.filter(f => f.g === g).map(f => `<option value="${f.k}">${esc(f.label)}</option>`).join('')}</optgroup>`).join('');
-}
-$('add').addEventListener('change', (e) => {
-  const f = F[e.target.value];
+// ---------- 新增條件視窗 ----------
+function addField(k) {
+  const f = F[k];
   if (!f) return;
   S.conds.push(f.type === 'enum' ? { k: f.k, op: 'eq', a: f.opts[0] ? f.opts[0][0] : '' } : { k: f.k, op: f.op || 'ge', a: f.def });
-  S.preset = null; SHOWN = 100; e.target.value = ''; save(); renderAll();
-});
+  S.preset = null; SHOWN = 100; save(); renderAll();
+}
+function renderPicker(q) {
+  q = (q || '').trim().toLowerCase();
+  const used = new Set(S.conds.map(c => c.k));
+  const item = (f) => `<button class="fitem ${used.has(f.k) ? 'added' : ''}" data-k="${f.k}"><b>${esc(f.label)}</b>${f.hint ? `<span>${esc(f.hint)}</span>` : ''}</button>`;
+  if (q) {
+    const hits = FIELDS.filter(f => (f.label + ' ' + (f.hint || '') + ' ' + groupOf(f)).toLowerCase().includes(q));
+    $('flist').innerHTML = hits.length ? `<div class="fgroup"><div class="items">${hits.map(item).join('')}</div></div>`
+      : '<div class="pempty">找不到相關條件，換個關鍵字試試。</div>';
+  } else {
+    $('flist').innerHTML = GROUP_ORDER.map(g => {
+      const fs = FIELDS.filter(f => groupOf(f) === g);
+      return fs.length ? `<details class="fgroup"><summary>${esc(g)}<small>${fs.length} 項</small></summary><div class="items">${fs.map(item).join('')}</div></details>` : '';
+    }).join('');
+  }
+  $('flist').querySelectorAll('.fitem').forEach(b => b.addEventListener('click', () => { addField(b.dataset.k); closePicker(); }));
+}
+function openPicker() {
+  $('fsearch').value = ''; renderPicker(''); $('sheet').hidden = false; document.body.style.overflow = 'hidden';
+}
+function closePicker() { $('sheet').hidden = true; document.body.style.overflow = ''; }
+$('addbtn').addEventListener('click', openPicker);
+$('sheetclose').addEventListener('click', closePicker);
+$('sheetbg').addEventListener('click', closePicker);
+$('fsearch').addEventListener('input', (e) => renderPicker(e.target.value));
+function renderAdd() {}
+
 $('save').addEventListener('click', () => {
   if (!S.conds.length) { alert('先設定條件，再儲存。'); return; }
   const name = (prompt('幫這個策略取個名字：', '我的策略 ' + (loadMine().length + 1)) || '').trim();
