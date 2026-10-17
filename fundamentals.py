@@ -512,10 +512,24 @@ def fetch_ptt(names: dict, days: int = 3, max_pages: int = 80, pause: float = 0.
     cutoff = datetime.now(tz) - timedelta(days=days)
     base = "https://www.ptt.cc"
     url = f"{base}/bbs/Stock/index.html"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+               "Accept": "text/html,application/xhtml+xml", "Accept-Language": "zh-TW,zh;q=0.9"}
+
+    def ptt_get(u):
+        # PTT 會擋掉太簡單的連線請求，所以要用一般瀏覽器的標頭
+        for attempt in range(1, 3):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(u, headers=headers), timeout=30) as r:
+                    return r.read().decode("utf-8", "ignore")
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(5)
+
     posts = []
     for _ in range(max_pages):
         try:
-            html = http_get(url, 30, retries=2).decode("utf-8", "ignore")
+            html = ptt_get(url)
         except Exception as e:
             print(f"  PTT 無法讀取：{e}")
             break
