@@ -447,3 +447,50 @@ def fetch_risk(last_day: str) -> dict:
             print(f"  無法取得當沖資料：{e}")
     print(f"  風險資料：變更交易 / 管理 / 停止交易 {n_flag} 檔，當沖資料 {sum(1 for v in out.values() if 'dt_shares' in v)} 檔")
     return out
+
+
+# ============================================================
+# 8. 近期新聞（Google 新聞 RSS：只取標題、來源、時間和連結）
+# ============================================================
+def fetch_media_news(targets: list, days: int = 7, max_items: int = 8, pause: float = 0.6) -> dict:
+    """targets：[(代號, 名稱)] → {代號: [{"t": 標題, "s": 來源, "d": 時間, "u": 連結}]}"""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    from urllib.parse import quote
+    from datetime import datetime, timedelta, timezone
+
+    out, fail = {}, 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    for code, name in targets:
+        q = quote(f"{name} {code} when:{days}d")
+        url = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        try:
+            root = ET.fromstring(http_get(url, 30, retries=2))
+            items, seen = [], set()
+            for it in root.iter("item"):
+                title = (it.findtext("title") or "").strip()
+                src = (it.findtext("source") or "").strip()
+                if src and title.endswith(" - " + src):
+                    title = title[: -len(src) - 3].strip()
+                if not title or title in seen:
+                    continue
+                try:
+                    dt = parsedate_to_datetime(it.findtext("pubDate") or "")
+                except Exception:
+                    dt = None
+                if dt and dt < cutoff:
+                    continue
+                seen.add(title)
+                items.append({"t": title, "s": src, "u": (it.findtext("link") or "").strip(),
+                              "d": dt.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M") if dt else ""})
+            items.sort(key=lambda x: x["d"], reverse=True)
+            if items:
+                out[code] = items[:max_items]
+        except Exception:
+            fail += 1
+            if fail >= 15 and not out:           # 一開始就連續失敗，多半是被擋，不要再浪費時間
+                print("  新聞來源連續失敗，這次先略過")
+                break
+        time.sleep(pause)
+    print(f"  近期新聞：查詢 {len(targets)} 檔，有新聞 {len(out)} 檔（失敗 {fail}）")
+    return out

@@ -119,6 +119,13 @@
   .secnav a.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   .group-title { font-size: 15px; font-weight: 700; color: var(--muted); margin: 26px 2px 10px; }
   section, .seg-bar, .alert { scroll-margin-top: 56px; }
+  .media a.item { display: block; text-decoration: none; color: inherit; padding: 10px 0; border-top: 1px solid var(--line); }
+  .media a.item:first-child { border-top: none; }
+  .media a.item b { display: block; font-size: 15px; font-weight: 500; line-height: 1.5; }
+  .media a.item span { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .media a.item:active b, .media a.item:hover b { color: var(--ma20); }
+  .more-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .more-links a { text-decoration: none; color: var(--ma20); border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px; font-size: 13px; }
   .chart { width: 100%; }
   #inst { height: 240px; } #rev { height: 260px; }
   #price { height: 460px; } #vol { height: 260px; } #macd { height: 280px; } #kdj { height: 280px; } #bt { height: 300px; }
@@ -198,7 +205,7 @@
 
     <nav class="secnav" id="secnav">
       <a href="#score-sec">評分</a><a href="#sec-analysis">白話分析</a><a href="#sec-chart">技術圖表</a>
-      <a href="#sec-chip">籌碼</a><a href="#sec-fund">基本面</a><a href="#sec-company">股東會・訊息</a><a href="#sec-learn">名詞小教室</a>
+      <a href="#sec-chip">籌碼</a><a href="#sec-fund">基本面</a><a href="#sec-media">新聞</a><a href="#sec-company">股東會・公告</a><a href="#sec-learn">名詞小教室</a>
     </nav>
     <div id="alert" class="alert" hidden></div>
     <section id="score-sec" hidden>
@@ -313,7 +320,14 @@
       <div id="rev" class="chart"></div>
       <div id="fund2"></div>
     </section>
-    <div class="group-title">🏢 公司資訊</div>
+    <div class="group-title">📰 新聞與公司資訊</div>
+    <section id="sec-media">
+      <h2>近期新聞</h2>
+      <p class="hint">最近 7 天的新聞標題，點標題會開啟原始新聞網站。</p>
+      <div class="media" id="media"></div>
+      <div class="more-links" id="morelinks"></div>
+    </section>
+
     <section id="sec-company">
       <h2>股東會</h2>
       <div id="meet"></div>
@@ -428,6 +442,7 @@ function show(R) {
   showVolumeStats(R.d);
   showChipFund(R);
   showScore(R);
+  showMedia(R);
 
   $('msg').hidden = true; $('main').hidden = false;
   setupCharts(R);
@@ -518,6 +533,25 @@ function showNews(list) {
 }
 
 
+
+
+// ---------- 近期新聞 ----------
+function ago(d) {
+  if (!d) return '';
+  const t = new Date(d.replace(' ', 'T') + ':00+08:00'), h = (Date.now() - t) / 36e5;
+  return h < 1 ? '剛剛' : h < 24 ? `${Math.floor(h)} 小時前` : `${Math.floor(h / 24)} 天前`;
+}
+function showMedia(R) {
+  const list = R.media || [];
+  const q = encodeURIComponent(`${R.name} ${R.code}`);
+  $('media').innerHTML = list.length
+    ? list.map(n => `<a class="item" href="${esc(n.u)}" target="_blank" rel="noopener noreferrer"><b>${esc(n.t)}</b>
+        <span>${esc(n.s || '')}${n.s && n.d ? ' ・ ' : ''}${esc(n.d ? n.d.slice(5).replace('-', '/') : '')}${n.d ? '（' + ago(n.d) + '）' : ''}</span></a>`).join('')
+    : `<div class="empty">${R.media_checked ? '最近 7 天沒有找到相關新聞。' : '這檔股票不在每日自動抓新聞的範圍（成交金額前 350 名、預設自選股、注意 / 處置股）。可以點下面的連結看最新新聞。'}</div>`;
+  $('morelinks').innerHTML = `<span class="hint" style="margin:0;align-self:center">看更多新聞：</span>
+    <a href="https://tw.stock.yahoo.com/quote/${encodeURIComponent(R.ticker)}/news" target="_blank" rel="noopener noreferrer">Yahoo 股市</a>
+    <a href="https://news.google.com/search?q=${q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" target="_blank" rel="noopener noreferrer">Google 新聞</a>`;
+}
 
 // ---------- 綜合評分 ----------
 function scoreColor(v) { return v == null ? '' : v >= 75 ? 'up' : v < 45 ? 'down' : ''; }

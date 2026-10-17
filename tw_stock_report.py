@@ -771,6 +771,8 @@ def build_record(code, name, ticker, df, period, info=None, stats=None):
         "alert": info.get("alert"),
         "meetings": info.get("meetings", []),
         "news": info.get("news", []),
+        "media": info.get("media") or [],
+        "media_checked": bool(info.get("media_checked")),
     }
     # 搜尋清單用的摘要：[代號, 名稱, 市場, 收盤, 漲跌%, 趨勢, 趨勢色, 警示]
     # 警示：d = 處置中、c = 可能處置、a = 今日注意
@@ -1265,6 +1267,15 @@ def main():
         if t:
             code_ticker[code] = t
     rs_map = relative_strength(code_ticker, prices, profiles, download_index(args.period))
+
+    # 近期新聞：成交金額前 350 名 + 自選股 + 注意 / 處置 / 可能處置（全部抓太慢，也容易被擋）
+    print("取得近期新聞…")
+    amt = {c: float(prices[t]["Close"].iloc[-1] * prices[t]["Volume"].iloc[-1]) for c, t in code_ticker.items()}
+    hot = sorted(amt, key=amt.get, reverse=True)[:350]
+    latest = tdays[-1] if tdays else ""
+    flagged = set(disp) | set(cand) | {c for c, d in att.items() if latest in d}
+    news_codes = list(dict.fromkeys([c for c, _ in watch] + sorted(flagged) + hot))
+    media = fundamentals.fetch_media_news([(c, universe.get(c, ("", None))[0] or c) for c in news_codes if c in code_ticker])
     stats = BacktestStats()
 
     rows, dates, failed, alert_notes, screen_rows = [], set(), [], {}, []
@@ -1278,6 +1289,7 @@ def main():
             "alert": build_alert(code, att, disp, cand, tdays),
             "meetings": meetings.get(code, []),
             "news": news.get(code, [])[:15],
+            "media": media.get(code), "media_checked": code in news_codes,
             "profile": profiles.get(code, {}),
             "extra": {"inst": inst.get(code), "margin": margin.get(code), "val": valuation.get(code),
                       "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code),
@@ -1332,7 +1344,7 @@ def main():
            f"地雷股 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('mine')] == 1)}、"
            f"負債比 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('debt')] is not None)}、"
            f"當沖 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('dt_ratio')] is not None)}、"
-           f"神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
+           f"新聞 {len(media)} 檔、神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))
