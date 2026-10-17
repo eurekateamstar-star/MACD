@@ -102,6 +102,7 @@
   .empty { color: var(--muted); font-size: 14px; }
 
   .chart { width: 100%; }
+  #inst { height: 240px; } #rev { height: 260px; }
   #price { height: 460px; } #vol { height: 260px; } #macd { height: 280px; } #kdj { height: 280px; } #bt { height: 300px; }
 
   .seg-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 8px 0; margin-bottom: 12px; }
@@ -145,6 +146,7 @@
     .cards { grid-template-columns: 1fr; gap: 10px; }
     .card-value { font-size: 16px; }
     .mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #inst { height: 200px; } #rev { height: 220px; }
     #price { height: 340px; } #vol { height: 200px; } #macd { height: 220px; } #kdj { height: 220px; } #bt { height: 240px; }
   }
 </style>
@@ -193,6 +195,31 @@
       <h2>重大訊息</h2>
       <p class="hint">公司在公開資訊觀測站發布的重大訊息，點標題看內容。</p>
       <div class="news" id="news"></div>
+    </section>
+
+    <section>
+      <h2>籌碼面</h2>
+      <p class="hint">三大法人（外資、投信、自營商）買賣超單位是張；正數 = 買超（紅），負數 = 賣超（綠）。</p>
+      <div id="chip"></div>
+      <div class="lg" id="inst-lg">
+        <span><i class="box" style="background:var(--ma20)"></i>外資</span>
+        <span><i class="box" style="background:var(--ma5)"></i>投信</span>
+        <span><i class="box" style="background:var(--ma60)"></i>自營商</span>
+      </div>
+      <div id="inst" class="chart"></div>
+      <div id="chip2"></div>
+    </section>
+
+    <section>
+      <h2>基本面</h2>
+      <p class="hint">評價每天更新；月營收每月 10 日前公布；財報為最新一季（今年累計）。</p>
+      <div id="fund"></div>
+      <div class="lg" id="rev-lg">
+        <span><i class="box" style="background:var(--ma20)"></i>月營收（億元）</span>
+        <span><i style="background:var(--up)"></i>年增率（%）</span>
+      </div>
+      <div id="rev" class="chart"></div>
+      <div id="fund2"></div>
     </section>
 
     <div class="seg-bar">
@@ -274,6 +301,16 @@
         <p>股價或成交量出現異常（例如短期漲跌太大、週轉率太高），證交所或櫃買中心會公布為「注意股」，提醒投資人。如果連續好幾天、或一段期間內多次被列為注意股，就會被「處置」：改成人工撮合（約每 2 分鐘撮合一次，不是隨時成交），大量買賣還要先付款或先交股票。常見的處置條件像是連續 3 個營業日、或最近 10 個營業日內有 6 個營業日達到注意標準。</p></details>
       <details><summary>可能達處置標準</summary>
         <p>證交所和櫃買中心每天會公布「注意累計次數可能達處置標準」的名單，代表這檔股票再被列為注意股，就可能被處置。本站另外用最近的注意紀錄估算「還差幾次」，但最終以官方公告為準。</p></details>
+      <details><summary>三大法人</summary>
+        <p>外資（外國投資機構）、投信（國內基金公司）、自營商（券商自己的錢）。他們資金大、研究多，買賣動向常被當作參考。投信常買中小型股，連續買超特別受關注。</p></details>
+      <details><summary>融資、融券、券資比</summary>
+        <p>融資是借錢買股票（多半是散戶），融券是借股票來賣（看空）。股價漲但融資減少，代表籌碼在法人或大戶手上，比較安定。券資比 = 融券 ÷ 融資，比例高時若股價上漲，放空的人被迫回補，可能出現「軋空」。</p></details>
+      <details><summary>千張大戶</summary>
+        <p>持有 1000 張（100 萬股）以上的股東。集保結算所每週公布持股分級，大戶持股比例增加、股東人數減少，通常代表籌碼往大戶集中。</p></details>
+      <details><summary>本益比、殖利率、股價淨值比</summary>
+        <p>本益比 = 股價 ÷ 每股盈餘，代表用幾年的獲利可以回本，越低越便宜，但也要看產業與成長性。殖利率 = 現金股利 ÷ 股價。股價淨值比 = 股價 ÷ 每股淨值，小於 1 代表股價低於公司帳面價值。</p></details>
+      <details><summary>月營收、EPS、毛利率、ROE</summary>
+        <p>月營收是公司每個月的收入，年增率是和去年同月比較，可以最早看出公司成長或衰退。EPS 是每股賺多少錢；毛利率代表產品賺錢的能力；ROE 是用股東的錢一年能賺多少 %，長期 15% 以上通常是好公司。</p></details>
       <details><summary>K 線（蠟燭圖）</summary>
         <p>每一根代表一天。實體的上下兩端是開盤價與收盤價，細線的頂端是最高價、底端是最低價。紅色代表收盤比開盤高（漲），綠色代表收盤比開盤低（跌）。</p></details>
       <details><summary>均線 MA</summary>
@@ -358,6 +395,7 @@ function show(R) {
   showMeetings(R.meetings || []);
   showNews(R.news || []);
   showVolumeStats(R.d);
+  showChipFund(R);
 
   $('msg').hidden = true; $('main').hidden = false;
   setupCharts(R);
@@ -445,6 +483,72 @@ function showNews(list) {
   }
   box.innerHTML = list.map(n => `<details><summary><span class="when">${esc(n.d)} ${esc(n.t)}${n.c ? ' ・ ' + esc(n.c) : ''}</span>${esc(n.s)}</summary>
     <div class="body">${esc(n.x)}</div></details>`).join('');
+}
+
+
+// ---------- 籌碼面、基本面 ----------
+const fmtN = (v, d = 0) => v == null ? '—' : (+v).toLocaleString(undefined, { maximumFractionDigits: d });
+const signed = (v, unit = '') => v == null ? '—' : `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : ''}${fmtN(v, 2)}${unit}</span>`;
+const streakTxt = (n) => n == null ? '' : n > 0 ? `連買 ${n} 天` : n < 0 ? `連賣 ${-n} 天` : '';
+function mini(items) {
+  return `<div class="mini">${items.map(([label, val, sub]) =>
+    `<div><div class="label">${label}</div><div class="num">${val}</div>${sub ? `<div class="label">${sub}</div>` : ''}</div>`).join('')}</div>`;
+}
+function showChipFund(R) {
+  const C = R.chip || {}, S = C.sum || {}, H = C.holders, F = R.fund || {};
+  if (C.inst) {
+    $('chip').innerHTML = mini([
+      ['外資（今日）', signed(S.f_net, ' 張'), streakTxt(S.f_streak)],
+      ['投信（今日）', signed(S.t_net, ' 張'), streakTxt(S.t_streak)],
+      ['自營商（今日）', signed(S.d_net, ' 張'), streakTxt(S.d_streak)],
+      ['法人佔成交量', S.i_ratio == null ? '—' : signed(S.i_ratio, '%'), '三大法人合計 ÷ 成交量'],
+    ]);
+  } else {
+    $('chip').innerHTML = '<div class="empty">沒有法人買賣資料（ETF 或資料暫時無法取得）。</div>';
+    $('inst-lg').hidden = true; $('inst').hidden = true;
+  }
+  let c2 = '';
+  if (S.mg_bal != null) c2 += mini([
+    ['融資餘額', fmtN(S.mg_bal) + ' 張', ''],
+    ['融資增減', signed(S.mg_chg, ' 張'), S.mg_streak > 0 ? `連增 ${S.mg_streak} 天` : S.mg_streak < 0 ? `連減 ${-S.mg_streak} 天` : ''],
+    ['融券餘額', fmtN(S.sh_bal) + ' 張', ''],
+    ['券資比', S.ss_ratio == null ? '—' : S.ss_ratio + '%', ''],
+  ]);
+  if (H) c2 += mini([
+    ['千張大戶持股', H.big1000 + '%', H.week ? `資料日 ${md(H.week)}` : ''],
+    ['大戶週增減', H.chg1000 == null ? '下週起顯示' : signed(H.chg1000, ' 點'), ''],
+    ['400 張以上大戶', H.big400 + '%', ''],
+    ['股東人數', fmtN(H.people) + ' 人', H.chg_people == null ? '' : `週變化 ${H.chg_people > 0 ? '+' : ''}${H.chg_people}%`],
+  ]);
+  $('chip2').innerHTML = c2;
+
+  const V = F.val || {}, FN = F.fin || {}, RV = F.rev;
+  const anyFund = V.pe != null || V.yield != null || FN.eps != null || RV;
+  if (!anyFund) { $('fund').innerHTML = '<div class="empty">沒有基本面資料（ETF 沒有財報與營收）。</div>'; }
+  else {
+    $('fund').innerHTML = mini([
+      ['本益比', V.pe ? fmtN(V.pe, 2) + ' 倍' : '—', V.pe ? '' : '虧損或無資料'],
+      ['殖利率', V.yield != null ? fmtN(V.yield, 2) + '%' : '—', ''],
+      ['股價淨值比', V.pb != null ? fmtN(V.pb, 2) + ' 倍' : '—', ''],
+      ['每股淨值', FN.bvps != null ? fmtN(FN.bvps, 2) + ' 元' : '—', ''],
+    ]) + mini([
+      ['EPS（今年累計）', FN.eps != null ? fmtN(FN.eps, 2) + ' 元' : '—', FN.year ? `${FN.year} 年前 ${FN.q} 季` : ''],
+      ['毛利率', FN.gm != null ? FN.gm + '%' : '—', ''],
+      ['營業利益率', FN.opm != null ? FN.opm + '%' : '—', ''],
+      ['ROE（年化）', FN.roe != null ? FN.roe + '%' : '—', ''],
+    ]);
+  }
+  if (RV) {
+    const tags = [];
+    if (RV.hi24) tags.push('創 24 個月新高'); else if (RV.hi12) tags.push('創 12 個月新高');
+    if (RV.yoy_streak >= 2) tags.push(`連續 ${RV.yoy_streak} 個月年增`);
+    $('fund2').innerHTML = mini([
+      ['最新月份', RV.ym ? RV.ym.replace('-', '/') : '—', tags.join('、')],
+      ['月營收年增率', signed(RV.yoy != null ? +RV.yoy.toFixed(1) : null, '%'), ''],
+      ['月營收月增率', signed(RV.mom != null ? +RV.mom.toFixed(1) : null, '%'), ''],
+      ['今年累計年增率', signed(RV.cum_yoy != null ? +RV.cum_yoy.toFixed(1) : null, '%'), ''],
+    ]);
+  } else { $('rev-lg').hidden = true; $('rev').hidden = true; }
 }
 
 // ---------- 量能數字 ----------
@@ -539,6 +643,32 @@ function setupCharts(R) {
       { type: 'scatter', mode: 'lines', name: '均線策略', x: bx, y: st, line: { color: C.ma20, width: 2 }, hovertemplate: '%{y:+.1f}%' },
       { type: 'scatter', mode: 'lines', name: '買進持有', x: bx, y: ho, line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '%{y:+.1f}%' },
     ], Object.assign({}, base, { xaxis: xaxis(bx), yaxis: yax({ ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }) }), cfg);
+  }
+
+  // 法人買賣超（最近 20 個交易日）
+  const I = (R.chip || {}).inst;
+  if (I) {
+    const ix = I.dates;
+    const bar = (name, y, color) => ({ type: 'bar', name, x: ix, y, marker: { color }, hovertemplate: '%{y:,.0f} 張' });
+    Plotly.react('inst', [bar('外資', I.f, C.ma20), bar('投信', I.t, C.ma5), bar('自營商', I.d, C.ma60)],
+      lay(ix, { barmode: 'relative', yaxis: yax({ zeroline: true, zerolinecolor: C.muted, tickformat: '~s', nticks: 5 }) }), cfg);
+  }
+  // 月營收（最近 24 個月）＋ 年增率
+  const RV = (R.fund || {}).rev;
+  if (RV && RV.v) {
+    const mx = RV.months, vals = RV.v.map(v => v == null ? null : +(v / 1e5).toFixed(2));   // 千元 → 億元
+    const yoy = RV.v.map((v, i) => (i >= 12 && v && RV.v[i - 12]) ? +((v / RV.v[i - 12] - 1) * 100).toFixed(1) : null);
+    const mlab = mx.map(m => m.slice(2).replace('-', '/'));
+    Plotly.react('rev', [
+      { type: 'bar', name: '月營收', x: mlab, y: vals, marker: { color: C.ma20, opacity: 0.75 }, hovertemplate: '%{y:,.2f} 億' },
+      { type: 'scatter', mode: 'lines+markers', name: '年增率', x: mlab, y: yoy, yaxis: 'y2', line: { color: C.up, width: 1.5 },
+        marker: { size: 4 }, hovertemplate: '%{y:+.1f}%', connectgaps: false },
+    ], Object.assign({}, base, {
+      xaxis: { type: 'category', tickangle: 0, nticks: mobile ? 4 : 8, showgrid: false, tickfont: font, fixedrange: true, linecolor: C.grid },
+      yaxis: yax({ side: 'left', tickformat: '~s', nticks: 4 }),
+      yaxis2: yax({ overlaying: 'y', side: 'right', ticksuffix: '%', showgrid: false, zeroline: true, zerolinecolor: C.grid, nticks: 4 }),
+      margin: mobile ? { l: 30, r: 34, t: 6, b: 24 } : { l: 40, r: 44, t: 8, b: 28 },
+    }), cfg);
   }
 
   const buttons = document.querySelectorAll('#seg button');

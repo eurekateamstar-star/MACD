@@ -42,6 +42,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
+import fundamentals
+
 HERE = Path(__file__).resolve().parent
 SITE = HERE / "site"
 WEB = HERE / "web"
@@ -198,7 +200,11 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     # 均線：過去 N 天收盤價的平均
     df["MA5"] = df["Close"].rolling(5).mean()     # 週線
+    df["MA10"] = df["Close"].rolling(10).mean()   # 雙週線
     df["MA20"] = df["Close"].rolling(20).mean()   # 月線
+    std20 = df["Close"].rolling(20).std()
+    df["BB_UP"] = df["MA20"] + 2 * std20           # 布林通道上緣
+    df["BB_LOW"] = df["MA20"] - 2 * std20          # 布林通道下緣
     df["MA60"] = df["Close"].rolling(60).mean()   # 季線
 
     # RSI(14)：最近漲勢與跌勢的力道比較，0~100
@@ -394,16 +400,31 @@ def clean(series, nd=2):
 
 # 智慧選股用的欄位（順序要和 screen_row() 一致；網頁 screen.html 依名稱讀取）
 SCREEN_COLS = [
+    # 基本
     "code", "name", "market", "ind", "flag",
-    "close", "chg", "ret5", "ret20",
+    "close", "chg", "ret5", "ret20", "amp",
+    # 量
     "vol", "vr", "vma20", "amt",
+    # 股本
     "cap", "mcap",
+    # MACD / KD / RSI
     "dif", "dea", "osc", "macd_x", "osc_up",
-    "k", "d", "j", "kd_x", "rsi",
-    "ma", "above20", "above60",
+    "k", "d", "j", "kd_x", "rsi", "wk_k", "wk_d", "wk_kd_x",
+    # 均線
+    "ma", "above20", "above60", "ma_x520", "ma_x2060", "ma_tight", "ma_break",
+    # 新高新低
     "nh20", "nh60", "nh240", "nh_days", "nh_streak",
-    "nl20", "nl60", "nl240", "nl_days", "nl_streak",
-    "dist_hi",
+    "nl20", "nl60", "nl240", "nl_days", "nl_streak", "dist_hi",
+    # 型態
+    "box_break", "gap_up", "gap_down", "bb_up", "bb_down", "bb_width", "long_red", "long_black", "limit_up", "engulf",
+    # 籌碼
+    "f_net", "t_net", "d_net", "i_net", "f_5", "t_5", "f_streak", "t_streak", "d_streak", "i_ratio",
+    "mg_bal", "mg_chg", "mg_streak", "sh_bal", "ss_ratio",
+    "big1000", "chg1000", "chg_people",
+    # 基本面
+    "pe", "yield", "pb",
+    "rev_yoy", "rev_mom", "rev_cum_yoy", "rev_hi12", "rev_hi24", "rev_yoy_streak",
+    "eps", "gm", "opm", "roe",
 ]
 
 
@@ -430,7 +451,109 @@ def _streak(flags: pd.Series) -> int:
     return n
 
 
-def screen_row(code, name, market, df, flag, profile):
+def signals(df: pd.DataFrame) -> dict:
+    """每天是否出現某個技術訊號（True / False 的時間序列）。選股看最後一天，回測看全部。"""
+    c, o, h, l = df["Close"], df["Open"], df["High"], df["Low"]
+    pc = c.shift(1)
+    chg = (c / pc - 1) * 100
+    hi = lambda w: c >= c.rolling(w, min_periods=w).max()
+    lo = lambda w: c <= c.rolling(w, min_periods=w).min()
+    up_x = lambda a, b: (a > b) & (a.shift(1) <= b.shift(1))
+    ma3 = df[["MA5", "MA10", "MA20"]]
+    spread = (ma3.max(axis=1) / ma3.min(axis=1) - 1) * 100            # 三條均線的距離（%）
+    prev_high20 = h.shift(1).rolling(20).max()
+    prev_low20 = l.shift(1).rolling(20).min()
+    s = {
+        "chg": chg,
+        "hi20": hi(20), "hi60": hi(60), "hi240": hi(240),
+        "lo20": lo(20), "lo60": lo(60), "lo240": lo(240),
+        "macd_gx": up_x(df["DIF"], df["DEA"]),
+        "kd_gx": up_x(df["K"], df["D"]),
+        "ma_x520": up_x(df["MA5"], df["MA20"]),
+        "ma_x2060": up_x(df["MA20"], df["MA60"]),
+        "ma_tight": spread <= 2,
+        # 均線糾結突破：昨天三線距離在 3% 以內，今天收盤站上三條均線而且收紅
+        "ma_break": (spread.shift(1) <= 3) & (c > ma3.max(axis=1)) & (pc <= ma3.max(axis=1).shift(1)) & (chg > 0),
+        # 箱型突破：過去 20 天高低差在 15% 以內，今天收盤突破這 20 天的最高價
+        "box_break": (prev_high20 / prev_low20 - 1 <= 0.15) & (c > prev_high20),
+        "gap_up": l > h.shift(1),
+        "gap_down": h < l.shift(1),
+        "bb_up": c > df["BB_UP"],
+        "bb_down": c < df["BB_LOW"],
+        "long_red": ((c - o) / pc * 100 >= 4) & (chg >= 4),
+        "long_black": ((o - c) / pc * 100 >= 4) & (chg <= -4),
+        "limit_up": chg >= 9.5,
+        "engulf": (pc < o.shift(1)) & (c > o) & (o <= pc) & (c >= o.shift(1)),
+        "vol_burst": (df["Lots"] / df["LotsMA5"] >= 2) & (chg >= 3) & (df["Lots"] >= 1000),
+    }
+    s["nh_days"] = s["hi60"].rolling(10).sum()
+    s["nl_days"] = s["lo60"].rolling(10).sum()
+    return s
+
+
+def weekly_kd(df: pd.DataFrame):
+    """把日線合成週線，再算週 KD。"""
+    w = df.resample("W-FRI").agg({"High": "max", "Low": "min", "Close": "last"}).dropna()
+    if len(w) < 12:
+        return None, None, 0
+    low9, high9 = w["Low"].rolling(9).min(), w["High"].rolling(9).max()
+    rsv = (w["Close"] - low9) / (high9 - low9) * 100
+    k = rsv.ewm(com=2, adjust=False).mean()
+    d = k.ewm(com=2, adjust=False).mean()
+    return k.iloc[-1], d.iloc[-1], _cross(k, d, 1)
+
+
+# 一鍵策略的回測：在過去的每一天，如果出現這個訊號就「假裝買進」，看 5 天、20 天後的漲跌
+BACKTESTS = {
+    "持續創新高": lambda s, df: s["hi60"] & (s["nh_days"] >= 3),
+    "創一年新高": lambda s, df: s["hi240"],
+    "破底": lambda s, df: s["lo60"],
+    "持續破底": lambda s, df: s["lo60"] & (s["nl_days"] >= 3),
+    "MACD 黃金交叉": lambda s, df: s["macd_gx"],
+    "MACD 紅柱放大": lambda s, df: (df["DIF"] >= 0) & (df["OSC"] >= 0) & (df["OSC"] > df["OSC"].shift(1)),
+    "KD 低檔黃金交叉": lambda s, df: s["kd_gx"] & (df["K"] <= 35),
+    "爆量長紅": lambda s, df: s["vol_burst"],
+    "多頭排列": lambda s, df: (df["MA5"] > df["MA20"]) & (df["MA20"] > df["MA60"]) & (df["Close"] > df["MA20"]),
+    "RSI 超賣": lambda s, df: df["RSI"] <= 30,
+    "均線糾結突破": lambda s, df: s["ma_break"],
+    "箱型突破": lambda s, df: s["box_break"],
+    "跳空上漲": lambda s, df: s["gap_up"],
+    "突破布林上緣": lambda s, df: s["bb_up"],
+    "月線黃金交叉": lambda s, df: s["ma_x520"],
+}
+
+
+class BacktestStats:
+    def __init__(self):
+        self.acc = {k: [0, 0.0, 0, 0.0, 0] for k in list(BACKTESTS) + ["_base"]}   # n, sum5, win5, sum20, win20
+
+    def add(self, df: pd.DataFrame, s: dict):
+        c = df["Close"]
+        f5 = (c.shift(-5) / c - 1) * 100
+        f20 = (c.shift(-20) / c - 1) * 100
+        valid = f20.notna() & (df["Lots"] >= 100)          # 太冷門（每天不到 100 張）的不算
+        for name, rule in list(BACKTESTS.items()) + [("_base", lambda s, df: pd.Series(True, index=df.index))]:
+            try:
+                m = rule(s, df).fillna(False).astype(bool) & valid
+            except Exception:
+                continue
+            if m.any():
+                a = self.acc[name]
+                a[0] += int(m.sum())
+                a[1] += float(f5[m].sum()); a[2] += int((f5[m] > 0).sum())
+                a[3] += float(f20[m].sum()); a[4] += int((f20[m] > 0).sum())
+
+    def result(self) -> dict:
+        out = {}
+        for k, (n, s5, w5, s20, w20) in self.acc.items():
+            if n:
+                out[k] = {"n": n, "avg5": round(s5 / n, 2), "win5": round(w5 / n * 100, 1),
+                          "avg20": round(s20 / n, 2), "win20": round(w20 / n * 100, 1)}
+        return out
+
+
+def screen_row(code, name, market, df, flag, profile, s, extra):
+    """extra：籌碼面與基本面（inst, margin, val, rev, fin, holders）"""
     c = df["Close"]
     last = df.iloc[-1]
     close = float(last["Close"])
@@ -439,50 +562,92 @@ def screen_row(code, name, market, df, flag, profile):
     def r(v, nd=2):
         return None if v is None or pd.isna(v) else round(float(v), nd)
 
-    def is_hi(w):
-        return (1 if close >= c.tail(w).max() else 0) if n >= w else None
+    def b(key):
+        v = s[key].iloc[-1]
+        return None if pd.isna(v) else int(bool(v))
 
-    def is_lo(w):
-        return (1 if close <= c.tail(w).min() else 0) if n >= w else None
-
-    hi60 = c >= c.rolling(60, min_periods=60).max()   # 每天是否收在 60 日新高
-    lo60 = c <= c.rolling(60, min_periods=60).min()
-    hi20 = c >= c.rolling(20, min_periods=20).max()
-    lo20 = c <= c.rolling(20, min_periods=20).min()
     w = min(n, 240)
     ma = (1 if last["MA5"] > last["MA20"] > last["MA60"] else -1 if last["MA5"] < last["MA20"] < last["MA60"] else 0) \
         if ok(last["MA60"]) else None
-    cap = profile.get("cap")
-    shares = profile.get("shares")
+    cap, shares = profile.get("cap"), profile.get("shares")
     osc_prev = df["OSC"].iloc[-2] if n >= 2 else None
+    wk_k, wk_d, wk_x = weekly_kd(df)
+    bb_w = (last["BB_UP"] - last["BB_LOW"]) / last["MA20"] * 100 if ok(last["BB_UP"]) and last["MA20"] else None
+
+    # 籌碼
+    inst = extra.get("inst") or {}
+    def last_of(key):
+        vals = [v for v in inst.get(key, []) if v is not None]
+        return vals[-1] if vals else None
+    def sum_last(key, k):
+        vals = [v for v in inst.get(key, []) if v is not None][-k:]
+        return sum(vals) if vals else None
+    i_net = last_of("all")
+    mg = extra.get("margin") or {}
+    mg_vals = [v for v in mg.get("mg", []) if v is not None]
+    sh_vals = [v for v in mg.get("sh", []) if v is not None]
+    mg_diff = [b2 - a2 for a2, b2 in zip(mg_vals, mg_vals[1:])]
+    val = extra.get("val") or {}
+    rev = extra.get("rev") or {}
+    fin = extra.get("fin") or {}
+    hd = extra.get("holders") or {}
+
     return [
         code, name, market, profile.get("ind", "") or ("ETF" if code.startswith("00") else ""), flag,
-        r(close), r((close / c.iloc[-2] - 1) * 100),
+        r(close), r(s["chg"].iloc[-1]),
         r((close / c.iloc[-6] - 1) * 100) if n > 5 else None,
         r((close / c.iloc[-21] - 1) * 100) if n > 20 else None,
+        r((last["High"] - last["Low"]) / c.iloc[-2] * 100) if n > 1 else None,     # 振幅
         r(last["Lots"], 0),
         r(last["Lots"] / last["LotsMA5"]) if ok(last["LotsMA5"]) and last["LotsMA5"] > 0 else None,
         r(last["LotsMA20"], 0),
-        r(last["Lots"] * 1000 * close / 1e8),                     # 成交金額（億）
-        r(cap, 1), r(close * shares / 1e8, 0) if shares else None,  # 股本、市值（億）
+        r(last["Lots"] * 1000 * close / 1e8),
+        r(cap, 1), r(close * shares / 1e8, 0) if shares else None,
         r(last["DIF"], 3), r(last["DEA"], 3), r(last["OSC"], 3),
         _cross(df["DIF"], df["DEA"]),
         (1 if ok(last["OSC"]) and ok(osc_prev) and last["OSC"] > osc_prev else 0),
         r(last["K"], 1), r(last["D"], 1), r(last["J"], 1), _cross(df["K"], df["D"]), r(last["RSI"], 1),
+        r(wk_k, 1), r(wk_d, 1), wk_x,
         ma,
         (1 if close > last["MA20"] else 0) if ok(last["MA20"]) else None,
         (1 if close > last["MA60"] else 0) if ok(last["MA60"]) else None,
-        is_hi(20), is_hi(60), is_hi(240) if n >= 200 else None,
-        int(hi60.tail(10).sum()), _streak(hi20),
-        is_lo(20), is_lo(60), is_lo(240) if n >= 200 else None,
-        int(lo60.tail(10).sum()), _streak(lo20),
-        r((close / c.tail(w).max() - 1) * 100, 1),                # 距離一年高點（%）
+        _cross(df["MA5"], df["MA20"]), _cross(df["MA20"], df["MA60"]),
+        b("ma_tight"), b("ma_break"),
+        b("hi20"), b("hi60"), b("hi240") if n >= 240 else None,
+        int(s["nh_days"].iloc[-1] or 0), _streak(s["hi20"]),
+        b("lo20"), b("lo60"), b("lo240") if n >= 240 else None,
+        int(s["nl_days"].iloc[-1] or 0), _streak(s["lo20"]),
+        r((close / c.tail(w).max() - 1) * 100, 1),
+        b("box_break"), b("gap_up"), b("gap_down"), b("bb_up"), b("bb_down"), r(bb_w, 1),
+        b("long_red"), b("long_black"), b("limit_up"), b("engulf"),
+        last_of("f"), last_of("t"), last_of("d"), i_net, sum_last("f", 5), sum_last("t", 5),
+        fundamentals.streak(inst.get("f", [])) if inst else None,
+        fundamentals.streak(inst.get("t", [])) if inst else None,
+        fundamentals.streak(inst.get("d", [])) if inst else None,
+        r(i_net / last["Lots"] * 100, 1) if i_net is not None and last["Lots"] else None,
+        mg_vals[-1] if mg_vals else None,
+        mg_diff[-1] if mg_diff else None,
+        fundamentals.streak(mg_diff) if mg_diff else None,
+        sh_vals[-1] if sh_vals else None,
+        r(sh_vals[-1] / mg_vals[-1] * 100, 1) if sh_vals and mg_vals and mg_vals[-1] else None,
+        hd.get("big1000"), hd.get("chg1000"), hd.get("chg_people"),
+        val.get("pe") or None, val.get("yield"), val.get("pb"),
+        r(rev.get("yoy"), 1), r(rev.get("mom"), 1), r(rev.get("cum_yoy"), 1),
+        rev.get("hi12"), rev.get("hi24"), rev.get("yoy_streak"),
+        fin.get("eps"), fin.get("gm"), fin.get("opm"), fin.get("roe"),
     ]
 
 
-def build_record(code, name, ticker, df, period, info=None):
+CHART_DAYS = 250   # 圖表與報告只顯示最近一年（約 250 個交易日）
+
+
+def build_record(code, name, ticker, df, period, info=None, stats=None):
     info = info or {}
-    df = add_indicators(df)
+    full = add_indicators(df)              # 用完整資料（約兩年）計算，指標和新高新低比較準
+    sig = signals(full)
+    if stats is not None and not code.startswith("00"):
+        stats.add(full, sig)
+    df = full.tail(CHART_DAYS)
     bt = backtest(df)
     cards = analyze(df, bt)
     last = df.iloc[-1]
@@ -520,11 +685,24 @@ def build_record(code, name, ticker, df, period, info=None):
     flag = {"disposed": "d", "candidate": "c", "attention": "a"}.get(alert.get("level"), "")
     summary = [code, name, market, round(close, 2), round(day_chg, 2),
                trend["value"] if trend else "", trend["tone"] if trend else "neutral", flag]
-    srow = screen_row(code, name, market, df, flag, info.get("profile", {}))
+    extra = info.get("extra") or {}
+    srow = screen_row(code, name, market, full, flag, info.get("profile", {}), sig, extra)
     profile = info.get("profile") or {}
     if profile.get("cap"):
         record["cap"] = round(profile["cap"], 1)
         record["ind"] = profile.get("ind", "")
+    # 籌碼面、基本面（報告頁顯示用）
+    row = dict(zip(SCREEN_COLS, srow))
+    record["chip"] = {
+        "inst": extra.get("inst"), "margin": extra.get("margin"),
+        "holders": extra.get("holders"),
+        "sum": {k: row[k] for k in ("f_net", "t_net", "d_net", "i_net", "f_5", "t_5", "f_streak", "t_streak", "d_streak",
+                                    "i_ratio", "mg_bal", "mg_chg", "mg_streak", "sh_bal", "ss_ratio")},
+    }
+    record["fund"] = {
+        "val": extra.get("val"), "fin": extra.get("fin"),
+        "rev": extra.get("rev"),
+    }
     return record, summary, df.index[-1].strftime("%Y-%m-%d"), srow
 
 
@@ -849,7 +1027,7 @@ def main():
     p = argparse.ArgumentParser(description="台股新手學習站產生器")
     p.add_argument("codes", nargs="*", help="股票代號，不填就跑全部台股")
     p.add_argument("--list", action="store_true", help="只跑 stocks.txt 裡的自選股")
-    p.add_argument("--period", default="1y", help="期間：6mo / 1y / 2y / 5y（預設 1y）")
+    p.add_argument("--period", default="2y", help="下載期間（預設 2y；報告顯示最近一年，較長的資料用來算新高與回測）")
     p.add_argument("--no-open", action="store_true", help="產生後不要開瀏覽器")
     args = p.parse_args()
 
@@ -888,6 +1066,14 @@ def main():
     tdays = [d.strftime("%Y-%m-%d") for d in ref.index] if ref is not None else []
     today = datetime.now(TW).strftime("%Y-%m-%d")
     att, disp, cand, news, meetings, profiles = fetch_market_info(tdays, today)
+    print("取得籌碼面與基本面資料…")
+    inst = fundamentals.fetch_institutional(tdays)
+    margin = fundamentals.fetch_margin(tdays)
+    valuation = fundamentals.fetch_valuation()
+    revenue = fundamentals.fetch_revenue(STATE)
+    financials = fundamentals.fetch_financials()
+    holders = fundamentals.fetch_holders(STATE)
+    stats = BacktestStats()
 
     rows, dates, failed, alert_notes, screen_rows = [], set(), [], {}, []
     for code, (name, suffix) in universe.items():
@@ -901,9 +1087,11 @@ def main():
             "meetings": meetings.get(code, []),
             "news": news.get(code, [])[:15],
             "profile": profiles.get(code, {}),
+            "extra": {"inst": inst.get(code), "margin": margin.get(code), "val": valuation.get(code),
+                      "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code)},
         }
         try:
-            record, summary, last_date, srow = build_record(code, name or code, ticker, prices[ticker], args.period, info)
+            record, summary, last_date, srow = build_record(code, name or code, ticker, prices[ticker], args.period, info, stats)
         except Exception as e:
             print(f"  {code} 分析失敗：{e}")
             failed.append(code)
@@ -933,7 +1121,8 @@ def main():
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     screen_rows.sort(key=lambda r: r[0])
     (SITE / "screen.json").write_text(json.dumps(
-        {"updated": listing["updated"], "date": listing["date"], "cols": SCREEN_COLS, "rows": screen_rows},
+        {"updated": listing["updated"], "date": listing["date"], "cols": SCREEN_COLS, "rows": screen_rows,
+         "bt": stats.result(), "bt_from": tdays[0] if tdays else "", "bt_to": tdays[-21] if len(tdays) > 21 else ""},
         ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     flags = [r[7] for r in rows]
@@ -943,7 +1132,8 @@ def main():
            f"有重大訊息紀錄 {len(news)} 檔、有股東會資料 {len(meetings)} 檔｜"
            f"有股本資料 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('cap')] is not None)} 檔、"
            f"今日創一年新高 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nh240')] == 1)} 檔、"
-           f"今日破 60 日新低 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nl60')] == 1)} 檔")
+           f"今日破 60 日新低 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nl60')] == 1)} 檔｜"
+           f"法人 {len(inst)}、融資券 {len(margin)}、本益比 {len(valuation)}、月營收 {len(revenue)}、財報 {len(financials)}、大戶 {len(holders)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))

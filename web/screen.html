@@ -33,6 +33,22 @@
   .preset { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 7px 13px;
             cursor: pointer; font-size: 14px; }
   .preset.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .pgroup { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+  .pgroup > b { flex: none; width: 52px; font-size: 13px; color: var(--muted); padding-top: 8px; }
+  .pgroup .presets { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+                     -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent);
+                     padding-right: 24px; }
+  .pgroup .presets::-webkit-scrollbar { display: none; }
+  .pgroup .preset { flex: none; white-space: nowrap; }
+  .preset.mine { border-style: dashed; }
+  .preset .x { margin-left: 6px; opacity: .6; }
+  .bt { margin: 8px 4px 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+  .bt-row { display: flex; gap: 8px; margin-top: 6px; }
+  .bt-row div { flex: 1; background: var(--soft); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .bt-row b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .bt-row span { font-size: 11px; color: var(--muted); }
+  .bt small { display: block; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .save-btn { border: 1px solid var(--accent) !important; color: var(--accent) !important; }
   .preset-desc { font-size: 13px; color: var(--muted); margin: 8px 4px 0; min-height: 1em; }
   .preset-desc b { color: var(--ink); }
 
@@ -96,19 +112,22 @@
   <h1>智慧選股</h1>
   <div class="meta" id="meta">載入中…</div>
 
-  <h2><span>一鍵策略</span><small>點一下馬上篩選</small></h2>
-  <div class="presets" id="presets"></div>
+  <h2><span>一鍵策略</span><small>左右滑動看更多</small></h2>
+  <div id="presets"></div>
   <div class="preset-desc" id="pdesc"></div>
+  <div class="bt" id="bt" hidden></div>
 
   <h2><span>我的條件</span><small>全部條件都要符合</small></h2>
   <div class="box" id="conds"></div>
   <div class="add-row">
     <select id="add"><option value="">＋ 新增條件…</option></select>
+    <button id="save" class="save-btn">儲存</button>
     <button id="clear">清除</button>
   </div>
   <div class="opts">
     <label><input type="checkbox" id="noetf" checked>只看個股（排除 ETF）</label>
     <label><input type="checkbox" id="noalert">排除處置 / 注意股</label>
+    <label><input type="checkbox" id="onlywatch">只看我的自選股</label>
   </div>
 
   <div class="res-head">
@@ -137,6 +156,7 @@ const FIELDS = [
   { g: '價格', k: 'chg', label: '今日漲跌幅', type: 'num', unit: '%', def: 3, hint: '跟前一天比漲跌了多少' },
   { g: '價格', k: 'ret5', label: '5 日漲跌幅', type: 'num', unit: '%', def: 5, hint: '最近一週的漲跌' },
   { g: '價格', k: 'ret20', label: '20 日漲跌幅', type: 'num', unit: '%', def: 10, hint: '最近一個月的漲跌' },
+  { g: '價格', k: 'amp', label: '今日振幅', type: 'num', unit: '%', def: 5, hint: '(最高 − 最低) ÷ 昨收，越大代表盤中震盪越劇烈' },
   { g: '價格', k: 'dist_hi', label: '距一年高點', type: 'num', unit: '%', def: -10, op: 'ge', hint: '0 = 就在一年高點；-20 = 比高點低 20%' },
   { g: '新高 / 破底', k: 'nh20', label: '今日創 20 日新高', type: 'enum', opts: YESNO, hint: '收盤價是最近 20 個交易日最高' },
   { g: '新高 / 破底', k: 'nh60', label: '今日創 60 日新高', type: 'enum', opts: YESNO, hint: '收盤價是最近一季最高' },
@@ -148,10 +168,52 @@ const FIELDS = [
   { g: '新高 / 破底', k: 'nl240', label: '今日創一年新低', type: 'enum', opts: YESNO, hint: '收盤價是最近一年最低' },
   { g: '新高 / 破底', k: 'nl_days', label: '近 10 日破 60 日新低天數', type: 'num', unit: '天', def: 3, hint: '天數越多，代表一直在破底' },
   { g: '新高 / 破底', k: 'nl_streak', label: '連續破 20 日新低天數', type: 'num', unit: '天', def: 3, hint: '連續好幾天都收在新低' },
+  { g: '型態', k: 'ma_break', label: '均線糾結突破', type: 'enum', opts: YESNO, hint: '5、10、20 日均線擠在一起（3% 以內）後，今天收盤往上突破' },
+  { g: '型態', k: 'ma_tight', label: '均線糾結中', type: 'enum', opts: YESNO, hint: '5、10、20 日均線距離在 2% 以內，常在大漲或大跌之前' },
+  { g: '型態', k: 'box_break', label: '箱型突破', type: 'enum', opts: YESNO, hint: '過去 20 天在 15% 區間內盤整，今天收盤突破區間最高價' },
+  { g: '型態', k: 'gap_up', label: '跳空上漲', type: 'enum', opts: YESNO, hint: '今天最低價比昨天最高價還高，留下向上缺口' },
+  { g: '型態', k: 'gap_down', label: '跳空下跌', type: 'enum', opts: YESNO, hint: '今天最高價比昨天最低價還低，留下向下缺口' },
+  { g: '型態', k: 'bb_up', label: '突破布林通道上緣', type: 'enum', opts: YESNO, hint: '收盤價高於布林通道上緣（20 日均線 + 2 倍標準差），強勢但也可能過熱' },
+  { g: '型態', k: 'bb_down', label: '跌破布林通道下緣', type: 'enum', opts: YESNO, hint: '收盤價低於布林通道下緣，弱勢但也可能超跌' },
+  { g: '型態', k: 'bb_width', label: '布林通道寬度', type: 'num', unit: '%', def: 8, op: 'le', hint: '通道越窄代表波動越小，常是變盤前兆' },
+  { g: '型態', k: 'long_red', label: '長紅 K 棒', type: 'enum', opts: YESNO, hint: '收盤比開盤高 4% 以上，且當天漲 4% 以上' },
+  { g: '型態', k: 'long_black', label: '長黑 K 棒', type: 'enum', opts: YESNO, hint: '收盤比開盤低 4% 以上，且當天跌 4% 以上' },
+  { g: '型態', k: 'limit_up', label: '漲停（漲 9.5% 以上）', type: 'enum', opts: YESNO },
+  { g: '型態', k: 'engulf', label: '多頭吞噬', type: 'enum', opts: YESNO, hint: '昨天收黑，今天收紅而且紅 K 實體完全包住昨天的黑 K' },
   { g: '成交量', k: 'vol', label: '成交量', type: 'num', unit: '張', def: 1000, hint: '今天成交幾張（1 張 = 1000 股），太少的股票不好買賣' },
   { g: '成交量', k: 'vr', label: '量比', type: 'num', unit: '倍', def: 2, hint: '今日量 ÷ 5 日均量，大於 1 代表比平常熱絡' },
   { g: '成交量', k: 'vma20', label: '20 日均量', type: 'num', unit: '張', def: 500, hint: '最近一個月平均每天成交幾張' },
   { g: '成交量', k: 'amt', label: '成交金額', type: 'num', unit: '億', def: 1, hint: '今天成交了多少錢' },
+  { g: '法人籌碼', k: 'f_net', label: '外資買賣超（今日）', type: 'num', unit: '張', def: 500, hint: '正數 = 買超，負數 = 賣超' },
+  { g: '法人籌碼', k: 't_net', label: '投信買賣超（今日）', type: 'num', unit: '張', def: 100, hint: '投信（基金）常買中小型股，連續買超很受關注' },
+  { g: '法人籌碼', k: 'd_net', label: '自營商買賣超（今日）', type: 'num', unit: '張', def: 100, hint: '券商自己的部位，偏短線' },
+  { g: '法人籌碼', k: 'i_net', label: '三大法人合計買賣超', type: 'num', unit: '張', def: 1000, hint: '外資 + 投信 + 自營商' },
+  { g: '法人籌碼', k: 'f_5', label: '外資近 5 日買賣超', type: 'num', unit: '張', def: 1000, hint: '最近一週累計' },
+  { g: '法人籌碼', k: 't_5', label: '投信近 5 日買賣超', type: 'num', unit: '張', def: 300, hint: '最近一週累計' },
+  { g: '法人籌碼', k: 'f_streak', label: '外資連續買超天數', type: 'num', unit: '天', def: 3, hint: '負數代表連續賣超的天數' },
+  { g: '法人籌碼', k: 't_streak', label: '投信連續買超天數', type: 'num', unit: '天', def: 3, hint: '負數代表連續賣超的天數' },
+  { g: '法人籌碼', k: 'd_streak', label: '自營商連續買超天數', type: 'num', unit: '天', def: 3, hint: '負數代表連續賣超的天數' },
+  { g: '法人籌碼', k: 'i_ratio', label: '法人買超佔成交量', type: 'num', unit: '%', def: 20, hint: '三大法人買超張數 ÷ 今日成交量，越高代表法人越積極' },
+  { g: '信用 / 大戶', k: 'mg_chg', label: '融資增減（今日）', type: 'num', unit: '張', def: 0, op: 'le', hint: '融資是散戶借錢買股。融資減少、股價上漲，代表籌碼比較安定' },
+  { g: '信用 / 大戶', k: 'mg_streak', label: '融資連續增加天數', type: 'num', unit: '天', def: -3, op: 'le', hint: '負數代表融資連續減少的天數' },
+  { g: '信用 / 大戶', k: 'mg_bal', label: '融資餘額', type: 'num', unit: '張', def: 1000 },
+  { g: '信用 / 大戶', k: 'ss_ratio', label: '券資比', type: 'num', unit: '%', def: 20, hint: '融券 ÷ 融資。比例高代表放空的人多，股價上漲時可能出現軋空' },
+  { g: '信用 / 大戶', k: 'big1000', label: '千張大戶持股比例', type: 'num', unit: '%', def: 60, hint: '持有 1000 張以上的大股東，合計持股佔多少（每週更新）' },
+  { g: '信用 / 大戶', k: 'chg1000', label: '千張大戶持股週增減', type: 'num', unit: '百分點', def: 0.5, hint: '跟上週比，大戶持股比例增加或減少多少' },
+  { g: '信用 / 大戶', k: 'chg_people', label: '股東人數週增減', type: 'num', unit: '%', def: 0, op: 'le', hint: '股東人數減少，通常代表籌碼往大戶集中' },
+  { g: '營收', k: 'rev_yoy', label: '月營收年增率', type: 'num', unit: '%', def: 20, hint: '最新一個月營收，比去年同月成長多少' },
+  { g: '營收', k: 'rev_mom', label: '月營收月增率', type: 'num', unit: '%', def: 10, hint: '比上個月成長多少（容易受季節影響）' },
+  { g: '營收', k: 'rev_cum_yoy', label: '今年累計營收年增率', type: 'num', unit: '%', def: 10, hint: '今年到目前為止的營收，比去年同期成長多少' },
+  { g: '營收', k: 'rev_hi12', label: '月營收創 12 個月新高', type: 'enum', opts: YESNO, hint: '最新一個月的營收是近一年最高' },
+  { g: '營收', k: 'rev_hi24', label: '月營收創 24 個月新高', type: 'enum', opts: YESNO, hint: '最新一個月的營收是近兩年最高' },
+  { g: '營收', k: 'rev_yoy_streak', label: '營收連續年增月數', type: 'num', unit: '個月', def: 3, hint: '連續幾個月營收都比去年同月高' },
+  { g: '財報 / 評價', k: 'pe', label: '本益比', type: 'num', unit: '倍', def: 15, op: 'le', hint: '股價 ÷ 近四季 EPS，越低代表越便宜（虧損公司沒有本益比）' },
+  { g: '財報 / 評價', k: 'yield', label: '殖利率', type: 'num', unit: '%', def: 5, hint: '現金股利 ÷ 股價，存股族最愛看' },
+  { g: '財報 / 評價', k: 'pb', label: '股價淨值比', type: 'num', unit: '倍', def: 1, op: 'le', hint: '股價 ÷ 每股淨值，小於 1 代表股價低於帳面價值' },
+  { g: '財報 / 評價', k: 'eps', label: '今年累計 EPS', type: 'num', unit: '元', def: 3, hint: '最新一季財報，今年到目前為止每股賺多少錢' },
+  { g: '財報 / 評價', k: 'gm', label: '毛利率', type: 'num', unit: '%', def: 30, hint: '（營收 − 成本）÷ 營收，越高代表產品越有競爭力' },
+  { g: '財報 / 評價', k: 'opm', label: '營業利益率', type: 'num', unit: '%', def: 10, hint: '本業賺錢的能力' },
+  { g: '財報 / 評價', k: 'roe', label: 'ROE（年化）', type: 'num', unit: '%', def: 15, hint: '股東權益報酬率，用股東的錢一年能賺多少 %。巴菲特看重 15% 以上' },
   { g: '股本 / 市值', k: 'cap', label: '股本', type: 'num', unit: '億', def: 50, op: 'le', hint: '公司實收資本額。小於 20 億算小型股，大於 100 億算大型股' },
   { g: '股本 / 市值', k: 'mcap', label: '市值', type: 'num', unit: '億', def: 1000, hint: '股價 × 發行股數，代表公司在市場上值多少錢' },
   { g: 'MACD', k: 'dif', label: 'MACD 的 DIF（快線）', type: 'num', unit: '', def: 0, hint: '大於 0 代表短期均線在長期均線之上，偏多' },
@@ -159,14 +221,18 @@ const FIELDS = [
   { g: 'MACD', k: 'osc', label: 'MACD 柱狀體', type: 'num', unit: '', def: 0, hint: '大於 0 是紅柱（多方較強），小於 0 是綠柱' },
   { g: 'MACD', k: 'macd_x', label: 'MACD 交叉', type: 'enum', opts: CROSS, hint: 'DIF 穿過 MACD 線' },
   { g: 'MACD', k: 'osc_up', label: 'MACD 柱狀體比昨天大', type: 'enum', opts: YESNO, hint: '紅柱變長或綠柱縮短，動能轉強' },
-  { g: 'KDJ / RSI', k: 'k', label: 'K 值', type: 'num', unit: '', def: 30, op: 'le', hint: '低於 20 偏冷、高於 80 偏熱' },
-  { g: 'KDJ / RSI', k: 'd', label: 'D 值', type: 'num', unit: '', def: 30, op: 'le', hint: 'K 的平滑線' },
-  { g: 'KDJ / RSI', k: 'j', label: 'J 值', type: 'num', unit: '', def: 0, op: 'le', hint: '低於 0 跌太急、高於 100 漲太急' },
-  { g: 'KDJ / RSI', k: 'kd_x', label: 'KD 交叉', type: 'enum', opts: CROSS, hint: 'K 線穿過 D 線' },
+  { g: 'KDJ / RSI', k: 'k', label: 'K 值（日）', type: 'num', unit: '', def: 30, op: 'le', hint: '低於 20 偏冷、高於 80 偏熱' },
+  { g: 'KDJ / RSI', k: 'd', label: 'D 值（日）', type: 'num', unit: '', def: 30, op: 'le', hint: 'K 的平滑線' },
+  { g: 'KDJ / RSI', k: 'j', label: 'J 值（日）', type: 'num', unit: '', def: 0, op: 'le', hint: '低於 0 跌太急、高於 100 漲太急' },
+  { g: 'KDJ / RSI', k: 'kd_x', label: '日 KD 交叉', type: 'enum', opts: CROSS, hint: 'K 線穿過 D 線' },
+  { g: 'KDJ / RSI', k: 'wk_k', label: 'K 值（週）', type: 'num', unit: '', def: 30, op: 'le', hint: '用週線算的 KD，比日 KD 穩定，適合看中期' },
+  { g: 'KDJ / RSI', k: 'wk_kd_x', label: '週 KD 交叉（本週）', type: 'enum', opts: [[1, '黃金交叉'], [-1, '死亡交叉']], hint: '週 K 線穿過週 D 線' },
   { g: 'KDJ / RSI', k: 'rsi', label: 'RSI', type: 'num', unit: '', def: 30, op: 'le', hint: '低於 30 超賣、高於 70 過熱' },
   { g: '均線', k: 'ma', label: '均線排列', type: 'enum', opts: [[1, '多頭排列'], [-1, '空頭排列'], [0, '糾結']], hint: '週線、月線、季線的上下順序' },
   { g: '均線', k: 'above20', label: '站上月線（MA20）', type: 'enum', opts: YESNO, hint: '收盤價在 20 日均線之上' },
   { g: '均線', k: 'above60', label: '站上季線（MA60）', type: 'enum', opts: YESNO, hint: '收盤價在 60 日均線之上' },
+  { g: '均線', k: 'ma_x520', label: '週線穿越月線（MA5 × MA20）', type: 'enum', opts: CROSS, hint: '短期均線穿過中期均線' },
+  { g: '均線', k: 'ma_x2060', label: '月線穿越季線（MA20 × MA60）', type: 'enum', opts: CROSS, hint: '中期均線穿過長期均線，訊號比較慢但比較穩' },
   { g: '其他', k: 'market', label: '市場', type: 'enum', opts: [['上市', '上市'], ['上櫃', '上櫃']] },
   { g: '其他', k: 'ind', label: '產業', type: 'enum', opts: [] },
   { g: '其他', k: 'flag', label: '警示狀態', type: 'enum', opts: [['d', '處置中'], ['c', '可能處置'], ['a', '今日注意'], ['', '沒有警示']] },
@@ -175,31 +241,69 @@ const F = Object.fromEntries(FIELDS.map(f => [f.k, f]));
 
 // ---------- 一鍵策略 ----------
 const PRESETS = [
-  { name: '持續創新高', desc: '近 10 日有 3 天以上創 60 日新高，今天也是', sort: 'nh_days',
+  { grp: '技術面', name: '持續創新高', desc: '近 10 日有 3 天以上創 60 日新高，今天也是', sort: 'nh_days',
     c: [{ k: 'nh_days', op: 'ge', a: 3 }, { k: 'nh60', op: 'eq', a: 1 }] },
-  { name: '創一年新高', desc: '收盤價是最近一年最高', sort: 'chg', c: [{ k: 'nh240', op: 'eq', a: 1 }] },
-  { name: '破底', desc: '收盤價跌破最近一季（60 日）最低', sort: 'chg', dir: 1, c: [{ k: 'nl60', op: 'eq', a: 1 }] },
-  { name: '持續破底', desc: '近 10 日有 3 天以上創 60 日新低，今天也是', sort: 'nl_days',
+  { grp: '技術面', name: '創一年新高', desc: '收盤價是最近一年最高', sort: 'chg', c: [{ k: 'nh240', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '破底', desc: '收盤價跌破最近一季（60 日）最低', sort: 'chg', dir: 1, c: [{ k: 'nl60', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '持續破底', desc: '近 10 日有 3 天以上創 60 日新低，今天也是', sort: 'nl_days',
     c: [{ k: 'nl_days', op: 'ge', a: 3 }, { k: 'nl60', op: 'eq', a: 1 }] },
-  { name: 'MACD 黃金交叉', desc: 'DIF 近 3 日向上穿過 MACD 線', sort: 'osc', c: [{ k: 'macd_x', op: 'eq', a: 1 }] },
-  { name: 'MACD 紅柱放大', desc: 'DIF 大於 0，紅柱比昨天長', sort: 'osc',
+  { grp: '技術面', name: '均線糾結突破', desc: '5、10、20 日均線糾結後，今天收盤往上突破', sort: 'vr', c: [{ k: 'ma_break', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '箱型突破', desc: '盤整 20 天（區間 15% 以內）後突破最高價', sort: 'vr', c: [{ k: 'box_break', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '跳空上漲', desc: '今天最低價高於昨天最高價', sort: 'chg', c: [{ k: 'gap_up', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '突破布林上緣', desc: '收盤價衝出布林通道上緣', sort: 'chg', c: [{ k: 'bb_up', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '月線黃金交叉', desc: '週線（MA5）近 3 日向上穿過月線（MA20）', sort: 'chg', c: [{ k: 'ma_x520', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: 'MACD 黃金交叉', desc: 'DIF 近 3 日向上穿過 MACD 線', sort: 'osc', c: [{ k: 'macd_x', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: 'MACD 紅柱放大', desc: 'DIF 大於 0，紅柱比昨天長', sort: 'osc',
     c: [{ k: 'dif', op: 'ge', a: 0 }, { k: 'osc', op: 'ge', a: 0 }, { k: 'osc_up', op: 'eq', a: 1 }] },
-  { name: 'KD 低檔黃金交叉', desc: 'K 線向上穿過 D 線，且 K 在 35 以下', sort: 'k', dir: 1,
+  { grp: '技術面', name: 'KD 低檔黃金交叉', desc: 'K 線向上穿過 D 線，且 K 在 35 以下', sort: 'k', dir: 1,
     c: [{ k: 'kd_x', op: 'eq', a: 1 }, { k: 'k', op: 'le', a: 35 }] },
-  { name: '爆量長紅', desc: '量比 2 倍以上、漲 3% 以上、成交 1000 張以上', sort: 'vr',
+  { grp: '技術面', name: '週 KD 黃金交叉', desc: '本週週 K 向上穿過週 D，適合看中期轉強', sort: 'wk_k', dir: 1,
+    c: [{ k: 'wk_kd_x', op: 'eq', a: 1 }] },
+  { grp: '技術面', name: '爆量長紅', desc: '量比 2 倍以上、漲 3% 以上、成交 1000 張以上', sort: 'vr',
     c: [{ k: 'vr', op: 'ge', a: 2 }, { k: 'chg', op: 'ge', a: 3 }, { k: 'vol', op: 'ge', a: 1000 }] },
-  { name: '多頭排列', desc: '週線 > 月線 > 季線，股價站上月線', sort: 'ret20',
+  { grp: '技術面', name: '多頭排列', desc: '週線 > 月線 > 季線，股價站上月線', sort: 'ret20',
     c: [{ k: 'ma', op: 'eq', a: 1 }, { k: 'above20', op: 'eq', a: 1 }] },
-  { name: 'RSI 超賣', desc: 'RSI 低於 30，短線跌深', sort: 'rsi', dir: 1, c: [{ k: 'rsi', op: 'le', a: 30 }] },
-  { name: '小股本放量', desc: '股本 20 億以下，量比 2 倍以上且收紅', sort: 'vr',
+  { grp: '技術面', name: 'RSI 超賣', desc: 'RSI 低於 30，短線跌深', sort: 'rsi', dir: 1, c: [{ k: 'rsi', op: 'le', a: 30 }] },
+  { grp: '籌碼面', name: '投信連買', desc: '投信連續買超 3 天以上', sort: 't_streak', c: [{ k: 't_streak', op: 'ge', a: 3 }] },
+  { grp: '籌碼面', name: '外資連買', desc: '外資連續買超 5 天以上', sort: 'f_streak', c: [{ k: 'f_streak', op: 'ge', a: 5 }] },
+  { grp: '籌碼面', name: '法人大買', desc: '三大法人買超佔成交量 20% 以上，且買超 500 張以上', sort: 'i_ratio',
+    c: [{ k: 'i_ratio', op: 'ge', a: 20 }, { k: 'i_net', op: 'ge', a: 500 }] },
+  { grp: '籌碼面', name: '外資買超權值股', desc: '市值 1000 億以上，外資今日買超', sort: 'f_net',
+    c: [{ k: 'mcap', op: 'ge', a: 1000 }, { k: 'f_net', op: 'ge', a: 1 }] },
+  { grp: '籌碼面', name: '籌碼安定', desc: '股價上漲、融資減少、法人買超', sort: 'i_net',
+    c: [{ k: 'chg', op: 'ge', a: 0.01 }, { k: 'mg_chg', op: 'le', a: -1 }, { k: 'i_net', op: 'ge', a: 1 }] },
+  { grp: '籌碼面', name: '大戶增加', desc: '千張大戶持股比上週增加 0.5 個百分點以上', sort: 'chg1000',
+    c: [{ k: 'chg1000', op: 'ge', a: 0.5 }] },
+  { grp: '籌碼面', name: '軋空候選', desc: '券資比 30% 以上，股價站上月線', sort: 'ss_ratio',
+    c: [{ k: 'ss_ratio', op: 'ge', a: 30 }, { k: 'above20', op: 'eq', a: 1 }] },
+  { grp: '基本面', name: '營收創新高', desc: '最新月營收創 12 個月新高，且年增 10% 以上', sort: 'rev_yoy',
+    c: [{ k: 'rev_hi12', op: 'eq', a: 1 }, { k: 'rev_yoy', op: 'ge', a: 10 }] },
+  { grp: '基本面', name: '營收連續成長', desc: '月營收連續 3 個月以上比去年同月成長', sort: 'rev_yoy_streak',
+    c: [{ k: 'rev_yoy_streak', op: 'ge', a: 3 }] },
+  { grp: '基本面', name: '高殖利率', desc: '殖利率 5% 以上，成交量 200 張以上', sort: 'yield',
+    c: [{ k: 'yield', op: 'ge', a: 5 }, { k: 'vma20', op: 'ge', a: 200 }] },
+  { grp: '基本面', name: '低本益比', desc: '本益比 12 倍以下（有獲利的公司）', sort: 'pe', dir: 1,
+    c: [{ k: 'pe', op: 'bt', a: 0.01, b: 12 }] },
+  { grp: '基本面', name: '高 ROE', desc: 'ROE 15% 以上、毛利率 20% 以上', sort: 'roe',
+    c: [{ k: 'roe', op: 'ge', a: 15 }, { k: 'gm', op: 'ge', a: 20 }] },
+  { grp: '基本面', name: '股價低於淨值', desc: '股價淨值比小於 1，而且有獲利', sort: 'pb', dir: 1,
+    c: [{ k: 'pb', op: 'bt', a: 0.01, b: 1 }, { k: 'eps', op: 'ge', a: 0.01 }] },
+  { grp: '綜合', name: '小股本放量', desc: '股本 20 億以下，量比 2 倍以上且收紅', sort: 'vr',
     c: [{ k: 'cap', op: 'le', a: 20 }, { k: 'vr', op: 'ge', a: 2 }, { k: 'chg', op: 'ge', a: 0 }] },
-  { name: '大型股站上月線', desc: '股本 100 億以上，收盤站上月線', sort: 'mcap',
+  { grp: '綜合', name: '大型股站上月線', desc: '股本 100 億以上，收盤站上月線', sort: 'mcap',
     c: [{ k: 'cap', op: 'ge', a: 100 }, { k: 'above20', op: 'eq', a: 1 }] },
+  { grp: '綜合', name: '營收成長＋投信買', desc: '月營收年增 20% 以上，投信近 5 日買超', sort: 't_5',
+    c: [{ k: 'rev_yoy', op: 'ge', a: 20 }, { k: 't_5', op: 'ge', a: 1 }] },
+  { grp: '綜合', name: '存股好選擇', desc: '殖利率 4% 以上、ROE 10% 以上、本益比 20 倍以下', sort: 'yield',
+    c: [{ k: 'yield', op: 'ge', a: 4 }, { k: 'roe', op: 'ge', a: 10 }, { k: 'pe', op: 'bt', a: 0.01, b: 20 }] },
 ];
 
 const SORTS = [['chg', '今日漲跌'], ['ret5', '5 日漲跌'], ['ret20', '20 日漲跌'], ['vol', '成交量'], ['vr', '量比'],
-  ['amt', '成交金額'], ['cap', '股本'], ['mcap', '市值'], ['osc', 'MACD 柱'], ['dif', 'MACD DIF'], ['k', 'K 值'], ['rsi', 'RSI'],
-  ['dist_hi', '距一年高點'], ['nh_days', '創新高天數'], ['nl_days', '破底天數']];
+  ['amt', '成交金額'], ['cap', '股本'], ['mcap', '市值'], ['f_net', '外資買超'], ['t_net', '投信買超'], ['i_net', '法人合計'],
+  ['f_streak', '外資連買天數'], ['t_streak', '投信連買天數'], ['i_ratio', '法人佔比'], ['mg_chg', '融資增減'], ['ss_ratio', '券資比'],
+  ['chg1000', '大戶增減'], ['rev_yoy', '營收年增率'], ['rev_yoy_streak', '營收連續成長'], ['pe', '本益比'], ['yield', '殖利率'],
+  ['pb', '淨值比'], ['eps', 'EPS'], ['roe', 'ROE'], ['gm', '毛利率'], ['osc', 'MACD 柱'], ['dif', 'MACD DIF'], ['k', 'K 值'],
+  ['wk_k', '週 K'], ['rsi', 'RSI'], ['dist_hi', '距一年高點'], ['nh_days', '創新高天數'], ['nl_days', '破底天數']];
 
 // ---------- 狀態 ----------
 let COLS = {}, ROWS = [], SHOWN = 100;
@@ -209,18 +313,65 @@ const save = () => { try { localStorage.setItem('screen', JSON.stringify(S)); } 
 const val = (row, k) => row[COLS[k]];
 
 // ---------- 畫面 ----------
+let BT = {}, BT_RANGE = '', WATCH = [];
+const loadMine = () => { try { const v = JSON.parse(localStorage.getItem('myStrategies')); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+const saveMine = (v) => { try { localStorage.setItem('myStrategies', JSON.stringify(v)); } catch (e) {} };
+
+function applyStrategy(key, p) {
+  if (S.preset === key) { S.preset = null; S.conds = []; }
+  else { S.preset = key; S.conds = p.c.map(c => Object.assign({}, c)); S.sort = p.sort || 'chg'; S.dir = p.dir || -1; }
+  SHOWN = 100; save(); renderAll();
+  $('count').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function renderPresets() {
-  $('presets').innerHTML = PRESETS.map((p, i) =>
-    `<button class="preset ${S.preset === i ? 'on' : ''}" data-i="${i}">${esc(p.name)}</button>`).join('');
-  const cur = PRESETS[S.preset];
-  $('pdesc').innerHTML = cur ? `<b>${esc(cur.name)}：</b>${esc(cur.desc)}（再點一次取消）` : '點一個策略，條件會自動填好，你也可以再自己調整。';
-  document.querySelectorAll('.preset').forEach(b => b.addEventListener('click', () => {
-    const i = +b.dataset.i, p = PRESETS[i];
-    if (S.preset === i) { S.preset = null; S.conds = []; }
-    else { S.preset = i; S.conds = p.c.map(c => Object.assign({}, c)); S.sort = p.sort || 'chg'; S.dir = p.dir || -1; }
-    SHOWN = 100; save(); renderAll();
-    $('count').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const mine = loadMine();
+  const groups = [...new Set(PRESETS.map(p => p.grp))];
+  let html = '';
+  if (mine.length) {
+    html += `<div class="pgroup"><b>我的</b><div class="presets">${mine.map((p, i) =>
+      `<button class="preset mine ${S.preset === 'm' + i ? 'on' : ''}" data-m="${i}">${esc(p.name)}<span class="x" data-del="${i}">×</span></button>`).join('')}</div></div>`;
+  }
+  html += groups.map(g => `<div class="pgroup"><b>${esc(g)}</b><div class="presets">${PRESETS.map((p, i) => p.grp === g
+    ? `<button class="preset ${S.preset === i ? 'on' : ''}" data-i="${i}">${esc(p.name)}</button>` : '').join('')}</div></div>`).join('');
+  $('presets').innerHTML = html;
+  document.querySelectorAll('.pgroup .preset.on').forEach(el => {   // 選到的策略捲到看得見的位置
+    const row = el.parentElement; row.scrollLeft = Math.max(0, el.offsetLeft - row.offsetLeft - 40);
+  });
+  document.querySelectorAll('.preset[data-i]').forEach(b => b.addEventListener('click', () => applyStrategy(+b.dataset.i, PRESETS[+b.dataset.i])));
+  document.querySelectorAll('.preset[data-m]').forEach(b => b.addEventListener('click', (e) => {
+    const i = +b.dataset.m;
+    if (e.target.dataset.del != null) {
+      if (!confirm(`刪除「${mine[i].name}」？`)) return;
+      mine.splice(i, 1); saveMine(mine); if (S.preset === 'm' + i) S.preset = null; save(); renderAll(); return;
+    }
+    applyStrategy('m' + i, mine[i]);
   }));
+  const cur = typeof S.preset === 'number' ? PRESETS[S.preset] : (typeof S.preset === 'string' ? mine[+S.preset.slice(1)] : null);
+  $('pdesc').innerHTML = cur ? `<b>${esc(cur.name)}：</b>${esc(cur.desc || describe(cur.c))}（再點一次取消）`
+    : '點一個策略，條件會自動填好，你也可以再自己調整，按「儲存」存成自己的策略。';
+  const st = cur && BT[cur.name], base = BT._base;
+  if (st && base) {
+    const col = (v) => v >= 0 ? 'up' : 'down';
+    $('bt').innerHTML = `<b>過去表現回測</b>（${esc(BT_RANGE)}，出現 ${st.n.toLocaleString()} 次）
+      <div class="bt-row">
+        <div><b class="${col(st.avg5)}">${st.avg5 >= 0 ? '+' : ''}${st.avg5}%</b><span>5 天後平均</span></div>
+        <div><b class="${col(st.avg20)}">${st.avg20 >= 0 ? '+' : ''}${st.avg20}%</b><span>20 天後平均</span></div>
+        <div><b>${st.win20}%</b><span>20 天後上漲機率</span></div>
+      </div>
+      <small>比較：同期間任意一天買進，20 天後平均 ${base.avg20 >= 0 ? '+' : ''}${base.avg20}%、上漲機率 ${base.win20}%。
+      回測是「出現訊號當天收盤買進、持有 N 天」的平均結果，不含手續費與交易稅；過去表現不代表未來。</small>`;
+    $('bt').hidden = false;
+  } else { $('bt').hidden = true; }
+}
+
+function describe(conds) {
+  return conds.map(c => {
+    const f = F[c.k]; if (!f) return '';
+    if (f.type === 'enum') { const o = f.opts.find(([v]) => String(v) === String(c.a)); return `${f.label}：${o ? o[1] : c.a}`; }
+    const u = f.unit || '';
+    return c.op === 'bt' ? `${f.label} ${c.a}～${c.b}${u}` : `${f.label} ${c.op === 'ge' ? '≥' : '≤'} ${c.a}${u}`;
+  }).filter(Boolean).join('、');
 }
 
 function condCtrl(c, i) {
@@ -267,6 +418,15 @@ $('add').addEventListener('change', (e) => {
   S.conds.push(f.type === 'enum' ? { k: f.k, op: 'eq', a: f.opts[0] ? f.opts[0][0] : '' } : { k: f.k, op: f.op || 'ge', a: f.def });
   S.preset = null; SHOWN = 100; e.target.value = ''; save(); renderAll();
 });
+$('save').addEventListener('click', () => {
+  if (!S.conds.length) { alert('先設定條件，再儲存。'); return; }
+  const name = (prompt('幫這個策略取個名字：', '我的策略 ' + (loadMine().length + 1)) || '').trim();
+  if (!name) return;
+  const mine = loadMine();
+  mine.push({ name, c: S.conds.map(c => Object.assign({}, c)), sort: S.sort, dir: S.dir });
+  saveMine(mine); S.preset = 'm' + (mine.length - 1); save(); renderAll();
+});
+$('onlywatch').addEventListener('change', (e) => { S.onlywatch = e.target.checked; SHOWN = 100; save(); renderResults(); });
 $('clear').addEventListener('click', () => { S.conds = []; S.preset = null; SHOWN = 100; save(); renderAll(); });
 $('noetf').addEventListener('change', (e) => { S.noetf = e.target.checked; SHOWN = 100; save(); renderResults(); });
 $('noalert').addEventListener('change', (e) => { S.noalert = e.target.checked; SHOWN = 100; save(); renderResults(); });
@@ -277,6 +437,7 @@ $('more').addEventListener('click', () => { SHOWN += 100; renderResults(); });
 function match(row) {
   if (S.noetf && String(val(row, 'code')).startsWith('00')) return false;
   if (S.noalert && val(row, 'flag')) return false;
+  if (S.onlywatch && !WATCH.includes(val(row, 'code'))) return false;
   for (const c of S.conds) {
     const v = val(row, c.k), f = F[c.k];
     if (f.type === 'enum') { if (String(v ?? '') !== String(c.a)) return false; continue; }
@@ -303,7 +464,7 @@ function fmtChip(k, v) {
 function renderResults() {
   $('sortk').innerHTML = SORTS.map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${t}</option>`).join('');
   $('sortd').textContent = S.dir < 0 ? '↓' : '↑';
-  $('noetf').checked = S.noetf; $('noalert').checked = S.noalert;
+  $('noetf').checked = S.noetf; $('noalert').checked = S.noalert; $('onlywatch').checked = !!S.onlywatch;
   const hits = ROWS.filter(match);
   hits.sort((a, b) => {
     const x = val(a, S.sort), y = val(b, S.sort);
@@ -311,7 +472,7 @@ function renderResults() {
     return (x - y) * S.dir;
   });
   $('count').innerHTML = `符合 ${hits.length} 檔<small>／共 ${ROWS.length} 檔</small>`;
-  const keys = [...new Set(S.conds.map(c => c.k).filter(k => !['market', 'ind', 'flag'].includes(k)))];
+  const keys = [...new Set(S.conds.map(c => c.k).filter(k => !['market', 'ind', 'flag'].includes(k)))].slice(0, 5);
   if (!keys.includes(S.sort) && !['chg'].includes(S.sort)) keys.push(S.sort);
   if (!keys.includes('cap')) keys.push('cap');
   $('list').innerHTML = hits.length ? hits.slice(0, SHOWN).map(r => {
@@ -334,12 +495,18 @@ function renderAll() { renderPresets(); renderConds(); renderResults(); }
 fetch('screen.json', { cache: 'no-cache' }).then(r => r.json()).then(data => {
   data.cols.forEach((c, i) => COLS[c] = i);
   ROWS = data.rows;
+  BT = data.bt || {};
+  BT_RANGE = data.bt_from ? `${data.bt_from.slice(0, 7).replace('-', '/')} ～ ${data.bt_to.slice(0, 7).replace('-', '/')}` : '';
   F.ind.opts = [...new Set(ROWS.map(r => val(r, 'ind')).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant')).map(x => [x, x]);
   S.conds = S.conds.filter(c => F[c.k]);
   $('meta').textContent = `共 ${ROWS.length} 檔 ・ 資料日期 ${data.date}`;
   $('foot').textContent = `更新時間 ${data.updated}（台北時間）・ 資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議`;
   renderAdd(); renderAll();
 }).catch(() => { $('meta').textContent = '資料載入失敗，請稍後重新整理'; });
+
+// 自選股清單（記在這支手機上；沒設定過就用預設清單）
+try { const v = JSON.parse(localStorage.getItem('watch')); if (Array.isArray(v)) WATCH = v; } catch (e) {}
+if (!WATCH.length) fetch('list.json', { cache: 'no-cache' }).then(r => r.json()).then(d => { WATCH = d.watch || []; if (S.onlywatch) renderResults(); }).catch(() => {});
 </script>
 </body>
 </html>
