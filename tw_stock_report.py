@@ -940,7 +940,10 @@ def main():
     n_tw = sum(r[2] == "上市" for r in rows)
     notice(f"成功 {len(rows)} 檔（上市 {n_tw}、上櫃 {len(rows) - n_tw}）、沒有資料 {len(failed)} 檔（資料日期 {listing['date']}）｜"
            f"處置中 {flags.count('d')}、可能處置 {flags.count('c')}、今日注意 {flags.count('a')}｜"
-           f"有重大訊息紀錄 {len(news)} 檔、有股東會資料 {len(meetings)} 檔")
+           f"有重大訊息紀錄 {len(news)} 檔、有股東會資料 {len(meetings)} 檔｜"
+           f"有股本資料 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('cap')] is not None)} 檔、"
+           f"今日創一年新高 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nh240')] == 1)} 檔、"
+           f"今日破 60 日新低 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('nl60')] == 1)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))
