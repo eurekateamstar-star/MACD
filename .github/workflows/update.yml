@@ -1,18 +1,19 @@
-# 每個交易日收盤後，自動產生全部台股的報告並發佈到 GitHub Pages
+# 每個交易日傍晚，自動產生全部台股的報告並發佈到 GitHub Pages
 name: 更新台股報告
 
 on:
   schedule:
-    # 週一到週五 UTC 07:30 = 台北時間 15:30（台股 13:30 收盤）
+    # 週一到週五 UTC 10:30 = 台北時間 18:30
+    # （注意股、處置股在收盤後公布，傍晚更新才抓得到當天的名單）
     # GitHub 的排程有時會延遲幾十分鐘，屬正常現象
-    - cron: "30 7 * * 1-5"
+    - cron: "30 10 * * 1-5"
   workflow_dispatch:      # 允許在 Actions 頁面手動按「Run workflow」
   push:
     branches: [main]
     paths: ["stocks.txt", "tw_stock_report.py", "web/**"]   # 改了清單、程式或網頁就馬上更新
 
 permissions:
-  contents: read
+  contents: write         # 用來保存每天累積的重大訊息（state/news.json）
   pages: write
   id-token: write
 
@@ -42,6 +43,18 @@ jobs:
 
       - name: 產生報告
         run: python tw_stock_report.py --no-open
+
+      - name: 保存重大訊息紀錄
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state
+          if git diff --cached --quiet; then
+            echo "沒有新的紀錄"
+          else
+            git commit -m "更新重大訊息紀錄 [skip ci]"
+            git pull --rebase && git push || echo "推送失敗，下次更新再試"
+          fi
 
       - name: 設定 Pages
         uses: actions/configure-pages@v5

@@ -52,6 +52,17 @@
   .close { font-weight: 700; font-size: 16px; }
   .chg { display: block; font-size: 13px; font-weight: 600; }
   .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .badge { font-size: 11px; padding: 0 6px; border-radius: 4px; font-weight: 600; }
+  .badge.d { background: var(--up); color: #fff; }
+  .badge.c { background: var(--warn); color: #fff; }
+  .badge.a { border: 1px solid var(--warn); color: var(--warn); }
+  .tabs { display: flex; gap: 5px; overflow-x: auto; margin: 4px 0 10px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: none; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit;
+                 font-size: 14px; padding: 6px 12px; border-radius: 99px; cursor: pointer; white-space: nowrap; }
+  .tabs button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+  .tabs button small { margin-left: 4px; opacity: .8; }
+  .tab-hint { color: var(--muted); font-size: 13px; margin: 0 4px 10px; }
   .empty { padding: 20px 16px; color: var(--muted); font-size: 14px; text-align: center; }
   mark { background: none; color: var(--accent); }
   .note { color: var(--muted); font-size: 13px; margin: 14px 4px 0; }
@@ -77,9 +88,15 @@
   </div>
 
   <div id="home">
-    <h2><span>我的自選</span><small>在個股頁按 ☆ 加入</small></h2>
+    <div class="tabs" id="tabs">
+      <button data-tab="watch" class="on">我的自選</button>
+      <button data-tab="d">處置中<small id="n-d"></small></button>
+      <button data-tab="c">可能處置<small id="n-c"></small></button>
+      <button data-tab="a">今日注意<small id="n-a"></small></button>
+    </div>
+    <p class="tab-hint" id="tabhint"></p>
     <div class="list" id="wlist"></div>
-    <p class="note">點任一檔看完整報告：K 線圖、均線、RSI、KD、回測與白話解釋。紅色代表上漲 / 偏多，綠色代表下跌 / 偏空。</p>
+    <p class="note">點任一檔看完整報告：K 線、MACD、KDJ、量能、注意 / 處置狀態、股東會、重大訊息與白話解釋。紅色代表上漲 / 偏多，綠色代表下跌 / 偏空。</p>
   </div>
 
   <footer id="foot">資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議</footer>
@@ -104,12 +121,13 @@ function hl(text, q) {
 }
 
 function rowHTML(s, q) {
-  const [code, name, market, close, chg, trend, tone] = s;
+  const [code, name, market, close, chg, trend, tone, flag] = s;
+  const badge = { d: '處置', c: '可能處置', a: '注意' }[flag];
   const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
   const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
   return `<a class="row" href="report.html?code=${encodeURIComponent(code)}">
     <div class="who"><div class="name">${hl(name, q)}</div>
-      <div class="sub"><span>${hl(code, q)}</span><span class="tag">${esc(market)}</span>${trend ? `<span class="tag ${tone}">${esc(trend)}</span>` : ''}</div></div>
+      <div class="sub"><span>${hl(code, q)}</span><span class="tag">${esc(market)}</span>${badge ? `<span class="badge ${flag}">${badge}</span>` : ''}${trend ? `<span class="tag ${tone}">${esc(trend)}</span>` : ''}</div></div>
     <div class="px"><span class="close">${close.toFixed(2)}</span><span class="chg ${cls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></div></a>`;
 }
 
@@ -137,13 +155,34 @@ function search(q) {
     : `<div class="empty">找不到「${esc(q)}」<br>請確認代號，或試試輸入公司名稱</div>`;
 }
 
+let TAB = 'watch';
+const HINTS = {
+  watch: '在個股頁按 ☆ 加入自選，清單記在這支手機上。',
+  d: '處置中：改成人工撮合（約每 2 分鐘一次），大量買賣要先付款或交股票。',
+  c: '官方公布「注意累計次數可能達處置標準」：再被列注意就可能被處置。',
+  a: '最近一個交易日因價格或成交量異常，被公布為注意股。',
+};
 function renderWatch() {
+  $('tabhint').textContent = HINTS[TAB];
+  if (TAB !== 'watch') {
+    const list = STOCKS.filter(s => s[7] === TAB);
+    $('wlist').innerHTML = list.length ? list.map(s => rowHTML(s, '')).join('')
+      : '<div class="empty">目前沒有股票</div>';
+    return;
+  }
   const w = getWatch();
   $('wlist').innerHTML = w.length
     ? w.map(c => BY_CODE[c] ? rowHTML(BY_CODE[c], '')
         : `<div class="row"><div class="who"><div class="name">${esc(c)}</div><div class="sub">這次沒有資料</div></div></div>`).join('')
     : '<div class="empty">還沒有自選股<br>用上面的搜尋找股票，進入個股頁後按 ☆ 加入</div>';
 }
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => {
+  TAB = b.dataset.tab;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  try { sessionStorage.setItem('tab', TAB); } catch (e) {}
+  renderWatch();
+}));
+try { const t = sessionStorage.getItem('tab'); if (t) { const b = document.querySelector(`#tabs button[data-tab="${t}"]`); if (b) { TAB = t; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); } } } catch (e) {}
 
 $('q').addEventListener('input', (e) => search(e.target.value));
 $('q').addEventListener('keydown', (e) => {
@@ -157,6 +196,7 @@ fetch('list.json', { cache: 'no-cache' }).then(r => r.json()).then(data => {
   STOCKS.forEach(s => BY_CODE[s[0]] = s);
   $('meta').textContent = `共 ${STOCKS.length} 檔 ・ 資料日期 ${data.date} ・ 收盤後自動更新`;
   $('foot').textContent = `更新時間 ${data.updated}（台北時間）・ 資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議`;
+  for (const f of ['d', 'c', 'a']) $('n-' + f).textContent = STOCKS.filter(s => s[7] === f).length;
   renderWatch();
   if ($('q').value) search($('q').value);
 }).catch(() => {
