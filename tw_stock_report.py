@@ -83,10 +83,20 @@ def read_stock_list(path: Path) -> list:
 # ============================================================
 # 1. 全部台股清單
 # ============================================================
-def http_get(url: str, timeout: int = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+def http_get(url: str, timeout: int = 30, retries: int = 3) -> bytes:
+    """官方網站偶爾會連線失敗或回傳空白，失敗就等一下再試。"""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/html,*/*"})
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = r.read()
+            if data.strip():
+                return data
+            raise ValueError("回傳內容是空的")
+        except Exception:
+            if attempt == retries:
+                raise
+            time.sleep(attempt * 5)
 
 
 def _pick(row: dict, keys) -> str:
@@ -137,8 +147,11 @@ def get_all_stocks() -> dict:
     """回傳 {代號: (名稱, '.TW' 或 '.TWO')}"""
     print("取得全部台股清單…")
     stocks = list_from_openapi()
-    if len(stocks) < 500:
-        print("  清單不完整，改用備援來源補齊…")
+    n_tw = sum(1 for _, s in stocks.values() if s == ".TW")
+    n_two = len(stocks) - n_tw
+    # 上市正常約 1300 檔、上櫃約 1000 檔；任一邊明顯不足就用備援來源補齊
+    if n_tw < 800 or n_two < 500:
+        print(f"  清單不完整（上市 {n_tw}、上櫃 {n_two}），改用備援來源補齊…")
         for code, v in list_from_isin().items():
             stocks.setdefault(code, v)
     return stocks
@@ -775,7 +788,8 @@ def main():
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     flags = [r[7] for r in rows]
-    notice(f"成功 {len(rows)} 檔、沒有資料 {len(failed)} 檔（資料日期 {listing['date']}）｜"
+    n_tw = sum(r[2] == "上市" for r in rows)
+    notice(f"成功 {len(rows)} 檔（上市 {n_tw}、上櫃 {len(rows) - n_tw}）、沒有資料 {len(failed)} 檔（資料日期 {listing['date']}）｜"
            f"處置中 {flags.count('d')}、可能處置 {flags.count('c')}、今日注意 {flags.count('a')}｜"
            f"有重大訊息紀錄 {len(news)} 檔、有股東會資料 {len(meetings)} 檔")
     if failed:
