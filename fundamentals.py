@@ -494,3 +494,68 @@ def fetch_media_news(targets: list, days: int = 7, max_items: int = 8, pause: fl
         time.sleep(pause)
     print(f"  近期新聞：查詢 {len(targets)} 檔，有新聞 {len(out)} 檔（失敗 {fail}）")
     return out
+
+
+# ============================================================
+# 9. 社群熱度：PTT 股票版（公開網頁，只讀標題、推文數與連結）
+# ============================================================
+# 兩個字、容易跟一般詞彙混淆的公司簡稱，標題裡出現不算（除非同時寫了代號）
+_PTT_STOP = {"大同", "統一", "中華", "台灣", "第一", "開發", "華南", "台新", "永豐", "國泰", "富邦", "元大", "新光",
+             "中信", "玉山", "凱基", "群益", "全新", "正新", "聯合", "大成", "東元", "光寶", "神達", "力成",
+             "台開", "三商", "同欣", "天鈺", "強茂", "大立", "中興", "新產", "台光", "精華", "美時", "長興"}
+
+
+def fetch_ptt(names: dict, days: int = 3, max_pages: int = 80, pause: float = 0.5) -> dict:
+    """names：{代號: 簡稱} → {代號: {"posts": 文章數, "push": 推文數合計, "items": [{"t","u","p","d"}]}}"""
+    from datetime import datetime, timedelta, timezone
+    tz = timezone(timedelta(hours=8))
+    cutoff = datetime.now(tz) - timedelta(days=days)
+    base = "https://www.ptt.cc"
+    url = f"{base}/bbs/Stock/index.html"
+    posts = []
+    for _ in range(max_pages):
+        try:
+            html = http_get(url, 30, retries=2).decode("utf-8", "ignore")
+        except Exception as e:
+            print(f"  PTT 無法讀取：{e}")
+            break
+        page_old = True
+        for m in re.finditer(r'<div class="r-ent">(.*?)<div class="mark">', html, re.S):
+            blk = m.group(1)
+            a = re.search(r'<a href="(/bbs/Stock/M\.(\d+)\.[^"]+)">(.*?)</a>', blk, re.S)
+            if not a:
+                continue                                   # 已刪除的文章
+            ts = datetime.fromtimestamp(int(a.group(2)), tz)
+            if ts >= cutoff:
+                page_old = False
+            n = re.search(r'<div class="nrec">(?:<span[^>]*>)?([^<]*)', blk)
+            nrec = (n.group(1).strip() if n else "")
+            push = 100 if nrec == "爆" else (-10 if nrec.startswith("X") else int(nrec) if nrec.isdigit() else 0)
+            title = re.sub(r"<[^>]+>", "", a.group(3)).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
+            posts.append((ts, title, base + a.group(1), push))
+        prev = re.search(r'<a class="btn wide" href="(/bbs/Stock/index\d+\.html)">&lsaquo; 上頁</a>', html)
+        if page_old or not prev:
+            break
+        url = base + prev.group(1)
+        time.sleep(pause)
+    posts = [p for p in posts if p[0] >= cutoff]
+    # 公告、盤中閒聊等固定文章不算
+    posts = [p for p in posts if not re.match(r"^\[(公告|閒聊)\]", p[1]) and "盤中閒聊" not in p[1] and "盤後閒聊" not in p[1]]
+
+    code_re = re.compile(r"(?<!\d)(\d{4,6}[A-Z]?)(?!\d)")
+    by_name = sorted(((n, c) for c, n in names.items() if n and len(n) >= 2 and n not in _PTT_STOP), key=lambda x: -len(x[0]))
+    out = {}
+    for ts, title, url, push in posts:
+        hit = {c for c in code_re.findall(title) if c in names and not (2000 <= int(c[:4]) <= 2035 and len(c) == 4 and names[c] not in title)}
+        for n, c in by_name:
+            if n in title:
+                hit.add(c)
+        for c in hit:
+            d = out.setdefault(c, {"posts": 0, "push": 0, "items": []})
+            d["posts"] += 1
+            d["push"] += max(push, 0)
+            d["items"].append({"t": title, "u": url, "p": push, "d": ts.strftime("%m/%d %H:%M")})
+    for d in out.values():
+        d["items"] = sorted(d["items"], key=lambda x: x["d"], reverse=True)[:8]
+    print(f"  PTT 股票版：最近 {days} 天 {len(posts)} 篇文章，提到 {len(out)} 檔股票")
+    return out

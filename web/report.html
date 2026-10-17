@@ -205,7 +205,7 @@
 
     <nav class="secnav" id="secnav">
       <a href="#score-sec">評分</a><a href="#sec-analysis">白話分析</a><a href="#sec-chart">技術圖表</a>
-      <a href="#sec-chip">籌碼</a><a href="#sec-fund">基本面</a><a href="#sec-media">新聞</a><a href="#sec-company">股東會・公告</a><a href="#sec-learn">名詞小教室</a>
+      <a href="#sec-chip">籌碼</a><a href="#sec-fund">基本面</a><a href="#sec-media">新聞・討論</a><a href="#sec-company">股東會・公告</a><a href="#sec-learn">名詞小教室</a>
     </nav>
     <div id="alert" class="alert" hidden></div>
     <section id="score-sec" hidden>
@@ -326,6 +326,9 @@
       <p class="hint">最近 7 天的新聞標題，點標題會開啟原始新聞網站。</p>
       <div class="media" id="media"></div>
       <div class="more-links" id="morelinks"></div>
+      <h2 style="margin-top:18px">PTT 股票版討論</h2>
+      <p class="hint">最近 3 天標題提到這檔股票的文章（推文數 爆 = 100 推以上）。散戶討論熱度僅供參考。</p>
+      <div class="media" id="ptt"></div>
     </section>
 
     <section id="sec-company">
@@ -443,6 +446,7 @@ function show(R) {
   showChipFund(R);
   showScore(R);
   showMedia(R);
+  showPtt(R);
 
   $('msg').hidden = true; $('main').hidden = false;
   setupCharts(R);
@@ -540,6 +544,15 @@ function ago(d) {
   if (!d) return '';
   const t = new Date(d.replace(' ', 'T') + ':00+08:00'), h = (Date.now() - t) / 36e5;
   return h < 1 ? '剛剛' : h < 24 ? `${Math.floor(h)} 小時前` : `${Math.floor(h / 24)} 天前`;
+}
+function showPtt(R) {
+  const P = R.ptt;
+  $('ptt').innerHTML = P && P.items && P.items.length
+    ? `<div class="hint" style="margin:0 0 4px">近 3 天 ${P.posts} 篇文章、推文 ${P.push}</div>` + P.items.map(n =>
+      `<a class="item" href="${esc(n.u)}" target="_blank" rel="noopener noreferrer"><b>${esc(n.t)}</b>
+        <span>${esc(n.d)} ・ ${n.p >= 100 ? '爆' : n.p < 0 ? '噓文多' : n.p + ' 推'}</span></a>`).join('')
+    : `<div class="empty">最近 3 天 PTT 股票版沒有文章標題提到這檔股票。
+       <a href="https://www.ptt.cc/bbs/Stock/search?q=${encodeURIComponent(R.name)}" target="_blank" rel="noopener noreferrer">到 PTT 搜尋</a></div>`;
 }
 function showMedia(R) {
   const list = R.media || [];

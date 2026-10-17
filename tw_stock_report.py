@@ -438,6 +438,8 @@ EXTRA_COLS = [
     "dt_ratio", "altered", "mine",
     # 評分
     "s_tech", "s_chip", "s_fund", "s_risk", "s_total", "magic",
+    # 社群熱度
+    "ptt_posts", "ptt_push",
 ]
 SCREEN_COLS = BASE_COLS + EXTRA_COLS
 
@@ -727,6 +729,8 @@ def screen_row(code, name, market, df, flag, profile, s, extra):
     d["s_tech"], d["s_chip"], d["s_fund"], d["s_risk"] = [None if x is None else round(x) for x in (tech, chip, fund, risk_s)]
     d["s_total"] = round(sum(parts) / len(parts)) if parts else None
     d["magic"] = None          # 神奇公式排名：所有股票算完後再填
+    pt = extra.get("ptt") or {}
+    d["ptt_posts"], d["ptt_push"] = pt.get("posts", 0), pt.get("push", 0)
     d["_reasons"] = reasons
     return d
 
@@ -773,6 +777,7 @@ def build_record(code, name, ticker, df, period, info=None, stats=None):
         "news": info.get("news", []),
         "media": info.get("media") or [],
         "media_checked": bool(info.get("media_checked")),
+        "ptt": info.get("ptt"),
     }
     # 搜尋清單用的摘要：[代號, 名稱, 市場, 收盤, 漲跌%, 趨勢, 趨勢色, 警示]
     # 警示：d = 處置中、c = 可能處置、a = 今日注意
@@ -1275,6 +1280,7 @@ def main():
     latest = tdays[-1] if tdays else ""
     flagged = set(disp) | set(cand) | {c for c, d in att.items() if latest in d}
     news_codes = list(dict.fromkeys([c for c, _ in watch] + sorted(flagged) + hot))
+    ptt = fundamentals.fetch_ptt({c: (universe.get(c, ("", None))[0] or "") for c in code_ticker})
     media = fundamentals.fetch_media_news([(c, universe.get(c, ("", None))[0] or c) for c in news_codes if c in code_ticker])
     stats = BacktestStats()
 
@@ -1289,11 +1295,11 @@ def main():
             "alert": build_alert(code, att, disp, cand, tdays),
             "meetings": meetings.get(code, []),
             "news": news.get(code, [])[:15],
-            "media": media.get(code), "media_checked": code in news_codes,
+            "media": media.get(code), "media_checked": code in news_codes, "ptt": ptt.get(code),
             "profile": profiles.get(code, {}),
             "extra": {"inst": inst.get(code), "margin": margin.get(code), "val": valuation.get(code),
                       "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code),
-                      "risk": risk.get(code), "rs": rs_map.get(code)},
+                      "risk": risk.get(code), "rs": rs_map.get(code), "ptt": ptt.get(code)},
         }
         try:
             record, summary, last_date, srow = build_record(code, name or code, ticker, prices[ticker], args.period, info, stats)
@@ -1321,6 +1327,8 @@ def main():
     listing = {
         "updated": now_tw(), "date": max(dates) if dates else "",
         "watch": [c for c, _ in watch], "stocks": rows, "alerts": alert_notes,
+        "hot": [[c, v["posts"], v["push"]] for c, v in sorted(ptt.items(), key=lambda kv: (-kv[1]["posts"], -kv[1]["push"]))
+                if c in {r[0] for r in rows}][:50],
     }
     (SITE / "list.json").write_text(
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -1344,7 +1352,7 @@ def main():
            f"地雷股 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('mine')] == 1)}、"
            f"負債比 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('debt')] is not None)}、"
            f"當沖 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('dt_ratio')] is not None)}、"
-           f"新聞 {len(media)} 檔、神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
+           f"新聞 {len(media)} 檔、PTT 熱門 {len(ptt)} 檔、神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))

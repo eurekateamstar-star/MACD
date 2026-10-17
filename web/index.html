@@ -121,6 +121,7 @@
       <button data-tab="d">處置中<small id="n-d"></small></button>
       <button data-tab="c">可能處置<small id="n-c"></small></button>
       <button data-tab="a">今日注意<small id="n-a"></small></button>
+      <button data-tab="hot">💬 熱門討論</button>
     </div>
     <p class="tab-hint" id="tabhint"></p>
     <div class="list" id="wlist"></div>
@@ -190,9 +191,16 @@ const HINTS = {
   d: '處置中：改成人工撮合（約每 2 分鐘一次），大量買賣要先付款或交股票。',
   c: '官方公布「注意累計次數可能達處置標準」：再被列注意就可能被處置。',
   a: '最近一個交易日因價格或成交量異常，被公布為注意股。',
+  hot: 'PTT 股票版最近 3 天最多人討論的股票（依文章數排序）。熱度高常代表已經漲（跌）很多，只供了解市場關注焦點。',
 };
 function renderWatch() {
   $('tabhint').textContent = HINTS[TAB];
+  if (TAB === 'hot') {
+    const hot = (LIST.hot || []).filter(([c]) => BY_CODE[c]);
+    $('wlist').innerHTML = hot.length ? hot.map(([c, n, p]) => rowHTML(BY_CODE[c], '', `PTT 近 3 天 ${n} 篇文章、推文 ${p}`)).join('')
+      : '<div class="empty">目前沒有熱門討論資料</div>';
+    return;
+  }
   if (TAB !== 'watch') {
     const list = STOCKS.filter(s => s[7] === TAB);
     $('wlist').innerHTML = list.length ? list.map(s => rowHTML(s, '', (LIST.alerts || {})[s[0]])).join('')
