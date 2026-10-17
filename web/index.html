@@ -62,6 +62,15 @@
                  font-size: 14px; padding: 6px 12px; border-radius: 99px; cursor: pointer; white-space: nowrap; }
   .tabs button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
   .tabs button small { margin-left: 4px; opacity: .8; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 2px 0 14px; }
+  .tile { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 10px 6px; cursor: pointer;
+          font: inherit; color: var(--ink); text-align: center; }
+  .tile b { display: block; font-size: 26px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 13px; color: var(--muted); }
+  .tile.t-d b { color: var(--up); } .tile.t-c b, .tile.t-a b { color: var(--warn); }
+  .tile.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .note-line { grid-column: 1 / -1; font-size: 12px; color: var(--muted); line-height: 1.45;
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .tab-hint { color: var(--muted); font-size: 13px; margin: 0 4px 10px; }
   .empty { padding: 20px 16px; color: var(--muted); font-size: 14px; text-align: center; }
   mark { background: none; color: var(--accent); }
@@ -88,6 +97,12 @@
   </div>
 
   <div id="home">
+    <h2><span>今日警示股</span><small>點一下看清單</small></h2>
+    <div class="tiles">
+      <button class="tile t-d" data-tab="d"><b id="t-d">–</b><span>處置中</span></button>
+      <button class="tile t-c" data-tab="c"><b id="t-c">–</b><span>可能處置</span></button>
+      <button class="tile t-a" data-tab="a"><b id="t-a">–</b><span>今日注意</span></button>
+    </div>
     <div class="tabs" id="tabs">
       <button data-tab="watch" class="on">我的自選</button>
       <button data-tab="d">處置中<small id="n-d"></small></button>
@@ -120,7 +135,7 @@ function hl(text, q) {
   return i < 0 ? t : esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
 }
 
-function rowHTML(s, q) {
+function rowHTML(s, q, note) {
   const [code, name, market, close, chg, trend, tone, flag] = s;
   const badge = { d: '處置', c: '可能處置', a: '注意' }[flag];
   const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
@@ -128,7 +143,8 @@ function rowHTML(s, q) {
   return `<a class="row" href="report.html?code=${encodeURIComponent(code)}">
     <div class="who"><div class="name">${hl(name, q)}</div>
       <div class="sub"><span>${hl(code, q)}</span><span class="tag">${esc(market)}</span>${badge ? `<span class="badge ${flag}">${badge}</span>` : ''}${trend ? `<span class="tag ${tone}">${esc(trend)}</span>` : ''}</div></div>
-    <div class="px"><span class="close">${close.toFixed(2)}</span><span class="chg ${cls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></div></a>`;
+    <div class="px"><span class="close">${close.toFixed(2)}</span><span class="chg ${cls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></div>
+    ${note ? `<div class="note-line">${esc(note)}</div>` : ''}</a>`;
 }
 
 function search(q) {
@@ -166,7 +182,7 @@ function renderWatch() {
   $('tabhint').textContent = HINTS[TAB];
   if (TAB !== 'watch') {
     const list = STOCKS.filter(s => s[7] === TAB);
-    $('wlist').innerHTML = list.length ? list.map(s => rowHTML(s, '')).join('')
+    $('wlist').innerHTML = list.length ? list.map(s => rowHTML(s, '', (LIST.alerts || {})[s[0]])).join('')
       : '<div class="empty">目前沒有股票</div>';
     return;
   }
@@ -176,13 +192,17 @@ function renderWatch() {
         : `<div class="row"><div class="who"><div class="name">${esc(c)}</div><div class="sub">這次沒有資料</div></div></div>`).join('')
     : '<div class="empty">還沒有自選股<br>用上面的搜尋找股票，進入個股頁後按 ☆ 加入</div>';
 }
-document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => {
-  TAB = b.dataset.tab;
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+function selectTab(tab, scroll) {
+  TAB = tab;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+  document.querySelectorAll('.tile').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
   try { sessionStorage.setItem('tab', TAB); } catch (e) {}
-  renderWatch();
-}));
-try { const t = sessionStorage.getItem('tab'); if (t) { const b = document.querySelector(`#tabs button[data-tab="${t}"]`); if (b) { TAB = t; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); } } } catch (e) {}
+  if (LIST) renderWatch();
+  if (scroll) $('tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+document.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => selectTab(b.dataset.tab, true)));
+try { const t = sessionStorage.getItem('tab'); if (t && document.querySelector(`#tabs button[data-tab="${t}"]`)) selectTab(t); } catch (e) {}
 
 $('q').addEventListener('input', (e) => search(e.target.value));
 $('q').addEventListener('keydown', (e) => {
@@ -196,7 +216,7 @@ fetch('list.json', { cache: 'no-cache' }).then(r => r.json()).then(data => {
   STOCKS.forEach(s => BY_CODE[s[0]] = s);
   $('meta').textContent = `共 ${STOCKS.length} 檔 ・ 資料日期 ${data.date} ・ 收盤後自動更新`;
   $('foot').textContent = `更新時間 ${data.updated}（台北時間）・ 資料來源 Yahoo Finance、證交所、櫃買中心 ・ 僅供學習參考，不構成投資建議`;
-  for (const f of ['d', 'c', 'a']) $('n-' + f).textContent = STOCKS.filter(s => s[7] === f).length;
+  for (const f of ['d', 'c', 'a']) { const n = STOCKS.filter(s => s[7] === f).length; $('n-' + f).textContent = n; $('t-' + f).textContent = n; }
   renderWatch();
   if ($('q').value) search($('q').value);
 }).catch(() => {

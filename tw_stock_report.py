@@ -756,7 +756,7 @@ def main():
     today = datetime.now(TW).strftime("%Y-%m-%d")
     att, disp, cand, news, meetings = fetch_market_info(tdays, today)
 
-    rows, dates, failed = [], set(), []
+    rows, dates, failed, alert_notes = [], set(), [], {}
     for code, (name, suffix) in universe.items():
         candidates = [code + suffix] if suffix else [code + ".TW", code + ".TWO"]
         ticker = next((t for t in candidates if t in prices), None)
@@ -777,12 +777,22 @@ def main():
         (SITE / "data" / f"{code}.json").write_text(
             json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         rows.append(summary)
+        a = info["alert"]
+        if summary[7]:  # 首頁警示清單要顯示的一行說明
+            if summary[7] == "d":
+                dp = a["disp"]
+                note = f"處置 {dp['start'][5:].replace('-', '/')}～{dp['end'][5:].replace('-', '/')}・{dp['reason']}"
+            elif summary[7] == "c":
+                note = a["cand"]
+            else:
+                note = re.sub(r"\s+", " ", a["records"][0]["x"])[:70] if a["records"] else ""
+            alert_notes[code] = note
         dates.add(last_date)
 
     rows.sort(key=lambda r: r[0])
     listing = {
         "updated": now_tw(), "date": max(dates) if dates else "",
-        "watch": [c for c, _ in watch], "stocks": rows,
+        "watch": [c for c, _ in watch], "stocks": rows, "alerts": alert_notes,
     }
     (SITE / "list.json").write_text(
         json.dumps(listing, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
