@@ -1248,7 +1248,8 @@ def main():
     if SITE.exists():
         shutil.rmtree(SITE)
     (SITE / "data").mkdir(parents=True)
-    for f in ("index.html", "report.html", "screen.html"):
+    (SITE / "px").mkdir(parents=True)
+    for f in ("index.html", "report.html", "screen.html", "backtest.html"):
         shutil.copy(WEB / f, SITE / f)
 
     # 交易日曆：用資料最完整的那一檔的日期
@@ -1309,6 +1310,13 @@ def main():
             continue
         (SITE / "data" / f"{code}.json").write_text(
             json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        # 回測用：兩年的原始股價（網頁自己計算指標）
+        px = prices[ticker]
+        (SITE / "px" / f"{code}.json").write_text(json.dumps({
+            "d": [x.strftime("%Y-%m-%d") for x in px.index],
+            "o": clean(px["Open"]), "h": clean(px["High"]), "l": clean(px["Low"]), "c": clean(px["Close"]),
+            "v": clean(px["Volume"] / 1000, 0),
+        }, separators=(",", ":")), encoding="utf-8")
         rows.append(summary)
         screen_rows.append(srow)
         a = info["alert"]

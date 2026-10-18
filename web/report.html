@@ -283,7 +283,7 @@
       <div id="kdj" class="chart"></div>
     </section>
     <section>
-      <h2>小回測：均線策略 vs 買進持有</h2>
+      <h2>小回測：均線策略 vs 買進持有 <a id="btlink" href="backtest.html" style="float:right;font-size:13px;font-weight:500;color:var(--ma20);text-decoration:none">進階回測 ›</a></h2>
       <p class="hint">策略規則：週線(MA5)在月線(MA20)上方就持有，否則空手。從所選期間的第一天開始算，未計手續費與交易稅。</p>
       <div class="bt-sum">
         <div><div class="label">均線策略</div><div class="num" id="bt-s">—</div></div>
@@ -446,6 +446,7 @@ function show(R) {
   showChipFund(R);
   showScore(R);
   showMedia(R);
+  $('btlink').href = 'backtest.html?code=' + encodeURIComponent(R.code);
   showPtt(R);
 
   $('msg').hidden = true; $('main').hidden = false;
