@@ -55,6 +55,23 @@
   .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   textarea { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px; font-size: 15px; min-height: 60px; }
 
+  .tgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tcard { position: relative; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+  .tcard b { display: block; font-size: 15px; } .tcard span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 3px; }
+  .tcard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); } .tcard.on b { color: var(--accent); }
+  .tcard .x { position: absolute; top: 6px; right: 8px; color: var(--muted); font-size: 16px; padding: 0 4px; }
+  .today { border-radius: 12px; padding: 12px 14px; margin-top: 18px; border: 1px solid var(--line); background: var(--panel); font-size: 15px; }
+  .today.buy { border-color: var(--up); background: color-mix(in srgb, var(--up) 8%, var(--panel)); }
+  .today.sell { border-color: var(--down); background: color-mix(in srgb, var(--down) 8%, var(--panel)); }
+  .today .t { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .today b { font-size: 17px; }
+  .cmp tr { cursor: pointer; } .cmp tr.on td { background: var(--soft); font-weight: 700; } .cmp tr:hover td { background: var(--soft); }
+  .rng { display: flex; gap: 4px; margin: 6px 0; }
+  .rng button { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 99px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+  .rng button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .trades tr[data-t] { cursor: pointer; } .trades tr.sel td { background: var(--soft); }
+  .why { color: var(--muted); font-size: 11px; display: block; white-space: normal; line-height: 1.3; }
+  .trades td { white-space: normal; vertical-align: top; } .trades td:nth-child(3), .trades td:nth-child(4) { white-space: nowrap; }
   .tpl { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .tpl::-webkit-scrollbar { display: none; }
   .tpl .chip { flex: none; white-space: nowrap; }
@@ -101,7 +118,7 @@
   .lg i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
   .lg i.dot { background: none; border-top: 2px dotted; height: 0; }
   .lg i.tri { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
-  #eq { height: 280px; } #px { height: 320px; }
+  #eq { height: 260px; } #px { height: 400px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   th, td { padding: 7px 4px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; border-top: 0; }
@@ -122,7 +139,7 @@
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
   @media (max-width: 640px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    #eq { height: 230px; } #px { height: 270px; }
+    #eq { height: 220px; } #px { height: 340px; }
   }
 </style>
 </head>
@@ -155,10 +172,11 @@
     </div>
   </div>
 
-  <div class="step"><span class="num">2</span><b>設定買賣規則</b><small>可以先選範本再修改</small></div>
-  <div class="tpl" id="tpl"></div>
+  <div class="step"><span class="num">2</span><b>選擇方法</b><small>點一個方法，買賣規則會自動填好</small></div>
+  <div class="tgrid" id="tpl"></div>
   <div class="tpl-desc" id="tpldesc"></div>
-  <div class="box rules" style="margin-top:10px">
+  <div class="step" style="margin-top:16px"><span class="num" style="background:var(--muted)">⚙</span><b style="font-size:15px">買賣規則（可以自己調整）</b></div>
+  <div class="box rules">
     <h3><span class="tag buy">買進</span>出現這些訊號就買
       <select id="entrymode"><option value="all">全部條件同時成立</option><option value="any">任一條件成立</option></select></h3>
     <div id="entry"></div>
@@ -322,33 +340,39 @@ function backtest(P, cfg, isEtf) {
   if (cfg.period !== 'all') start = Math.max(start, N - +cfg.period);
   const feeRate = 0.001425 * cfg.disc, tax = isEtf ? 0.001 : 0.003, lot = cfg.lot;
   const fee = (amt) => Math.max(20, Math.round(amt * feeRate));
-  let cash = cfg.cap, sh = 0, pos = null, pending = null;
+  let cash = cfg.cap, sh = 0, pos = null, pending = null, buyWhy = '', today = null;
   const equity = [], trades = [];
   for (let i = start; i < N; i++) {
     if (pending === 'buy') {
       const pr = I.o[i];
       let n = Math.floor(cash / (pr * (1 + feeRate)) / lot) * lot;
       while (n > 0 && n * pr + fee(n * pr) > cash) n -= lot;
-      if (n > 0) { const cost = n * pr + fee(n * pr); cash -= cost; sh = n; pos = { idx: i, date: P.d[i], price: pr, peak: pr, cost }; }
+      if (n > 0) { const cost = n * pr + fee(n * pr); cash -= cost; sh = n; pos = { idx: i, date: P.d[i], price: pr, peak: pr, cost, sig: buyWhy }; }
       pending = null;
     } else if (pending && pending.sell) {
       const pr = I.o[i], amt = sh * pr, get = amt - fee(amt) - Math.round(amt * tax);
       cash += get;
-      trades.push({ bd: pos.date, bp: pos.price, sd: P.d[i], sp: pr, sh, days: i - pos.idx, ret: get / pos.cost - 1, pnl: get - pos.cost, why: pending.why });
+      trades.push({ bd: pos.date, bp: pos.price, sd: P.d[i], sp: pr, sh, days: i - pos.idx, ret: get / pos.cost - 1, pnl: get - pos.cost,
+                    why: pending.why, bwhy: pos.sig, bi: pos.idx, si: i });
       sh = 0; pos = null; pending = null;
     }
     if (pos) pos.peak = Math.max(pos.peak, I.c[i]);
     equity.push(cash + sh * I.c[i]);
-    if (i >= N - 1) break;
+    // 收盤後檢查訊號：最後一天只記錄「今天的訊號」，不成交
+    let sig = null;
     if (!pos) {
       const hits = ent.map(r => !!r.R.fn(I, i, r.p));
-      if (ent.length && (cfg.mode === 'any' ? hits.some(Boolean) : hits.every(Boolean))) pending = 'buy';
+      if (ent.length && (cfg.mode === 'any' ? hits.some(Boolean) : hits.every(Boolean)))
+        sig = { buy: true, why: ent.filter((_, k) => hits[k]).map(r => r.R.name).join('＋') };
     } else {
       const hit = ex.find(r => r.R.fn(I, i, r.p, pos));
-      if (hit) pending = { sell: true, why: hit.R.name };
+      if (hit) sig = { sell: true, why: hit.R.name };
     }
+    if (i >= N - 1) { today = sig; break; }
+    if (sig && sig.buy) { pending = 'buy'; buyWhy = sig.why; }
+    else if (sig && sig.sell) pending = { sell: true, why: sig.why };
   }
-  const open = pos ? { bd: pos.date, bp: pos.price, sh, days: N - 1 - pos.idx, ret: (sh * I.c[N - 1] * (1 - feeRate - tax)) / pos.cost - 1 } : null;
+  const open = pos ? { bd: pos.date, bp: pos.price, sh, days: N - 1 - pos.idx, ret: (sh * I.c[N - 1] * (1 - feeRate - tax)) / pos.cost - 1, bi: pos.idx, bwhy: pos.sig } : null;
   // 統計
   const final = equity[equity.length - 1], days = equity.length;
   let peak = -Infinity, mdd = 0;
@@ -363,7 +387,8 @@ function backtest(P, cfg, isEtf) {
   const inMkt = trades.reduce((s, t) => s + t.days, 0) + (open ? open.days : 0);
   const yrs = days / 250;
   return {
-    start, dates: P.d.slice(start), close: I.c.slice(start), equity, bhEq, trades, open,
+    start, dates: P.d.slice(start), close: I.c.slice(start), equity, bhEq, trades, open, today, I, P, ent, ex,
+    lastDate: P.d[N - 1], lastClose: I.c[N - 1],
     ret: final / cfg.cap - 1, cagr: yrs > 0.2 ? Math.pow(final / cfg.cap, 1 / yrs) - 1 : null, mdd,
     bh: bhEq[bhEq.length - 1] / cfg.cap - 1, bhMdd: bmdd,
     n: trades.length, win: trades.length ? wins.length / trades.length : null,
@@ -405,18 +430,29 @@ function multiCodes() {
 
 function renderTpl() {
   const mine = loadMine();
-  $('tpl').innerHTML = TEMPLATES.map((t, i) => `<button class="chip ${S.tpl === i ? 'on' : ''}" data-t="${i}">${esc(t.name)}</button>`).join('')
-    + mine.map((t, i) => `<button class="chip ${S.tpl === 'm' + i ? 'on' : ''}" data-t="m${i}">📁 ${esc(t.name)}</button>`).join('');
-  const cur = typeof S.tpl === 'number' ? TEMPLATES[S.tpl] : (typeof S.tpl === 'string' ? mine[+S.tpl.slice(1)] : null);
-  $('tpldesc').innerHTML = cur ? `<b>${esc(cur.name)}：</b>${esc(cur.desc || '你儲存的規則')}` + (typeof S.tpl === 'string' ? ' <a href="#" id="deltpl">刪除</a>' : '') : '自訂規則';
-  document.querySelectorAll('#tpl .chip').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.t, t = k[0] === 'm' ? mine[+k.slice(1)] : TEMPLATES[+k];
-    S.tpl = k[0] === 'm' ? k : +k; S.entry = JSON.parse(JSON.stringify(t.entry)); S.exit = JSON.parse(JSON.stringify(t.exit)); S.entryMode = t.mode || 'all';
-    save(); renderTpl(); renderRules();
+  $('tpl').innerHTML = TEMPLATES.map((t, i) => `<button class="tcard ${S.tpl === i ? 'on' : ''}" data-t="${i}"><b>${esc(t.name)}</b><span>${esc(t.desc)}</span></button>`).join('')
+    + mine.map((t, i) => `<button class="tcard ${S.tpl === 'm' + i ? 'on' : ''}" data-t="m${i}"><span class="x" data-del="${i}">×</span><b>📁 ${esc(t.name)}</b><span>${esc(describeRules(t))}</span></button>`).join('');
+  $('tpldesc').textContent = S.tpl == null ? '目前是自訂規則（你修改過範本）。可以按下面的「儲存這套規則」存起來。' : '';
+  document.querySelectorAll('#tpl .tcard').forEach(b => b.addEventListener('click', (e) => {
+    const k = b.dataset.t;
+    if (e.target.dataset.del != null) {
+      if (!confirm('刪除這套規則？')) return;
+      mine.splice(+e.target.dataset.del, 1); localStorage.setItem('btMine', JSON.stringify(mine)); if (S.tpl === k) S.tpl = null; save(); renderTpl(); return;
+    }
+    applyTemplate(k);
+    if (S.mode === 'single' && $('results').innerHTML) $('run').click();   // 已經回測過就直接重算
   }));
-  const del = $('deltpl');
-  if (del) del.addEventListener('click', (e) => { e.preventDefault(); if (!confirm('刪除這套規則？')) return;
-    mine.splice(+S.tpl.slice(1), 1); localStorage.setItem('btMine', JSON.stringify(mine)); S.tpl = null; save(); renderTpl(); });
+}
+function applyTemplate(k) {
+  const mine = loadMine(), t = String(k)[0] === 'm' ? mine[+String(k).slice(1)] : TEMPLATES[+k];
+  if (!t) return;
+  S.tpl = String(k)[0] === 'm' ? String(k) : +k;
+  S.entry = JSON.parse(JSON.stringify(t.entry)); S.exit = JSON.parse(JSON.stringify(t.exit)); S.entryMode = t.mode || 'all';
+  save(); renderTpl(); renderRules();
+}
+function describeRules(t) {
+  const d = (list) => list.map(([id]) => RULES[id] ? RULES[id].name : '').filter(Boolean).join('、');
+  return `買：${d(t.entry)}／賣：${d(t.exit)}`;
 }
 
 function ruleHTML(side, [id, p], i) {
@@ -499,15 +535,52 @@ $('run').addEventListener('click', async () => {
 
 function statBox(label, val, sub, c) { return `<div class="stat"><div class="label">${label}</div><div class="val ${c || ''}">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`; }
 
+let LAST = null, RANGE = null, SEL = null;
+
+function todayBox(r, code) {
+  const md = (d) => d.slice(5).replace('-', '/');
+  const name = esc(NAMES[code] || code), date = md(r.lastDate);
+  if (r.open) {
+    const held = `目前<b>持有中</b>：${md(r.open.bd)} 以 ${r.open.bp} 元買進（${esc(r.open.bwhy || '買進訊號')}），到 ${date} 報酬 <b class="${cls(r.open.ret)}">${pct(r.open.ret)}</b>。`;
+    return r.today && r.today.sell
+      ? `<div class="today sell"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>${held}<br>⚠ <b>今天出現賣出訊號</b>（${esc(r.today.why)}），照規則下一個交易日開盤賣出。</div>`
+      : `<div class="today"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>${held}<br>今天沒有出現賣出訊號，照規則<b>續抱</b>。</div>`;
+  }
+  return r.today && r.today.buy
+    ? `<div class="today buy"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>🔔 <b>今天出現買進訊號</b>（${esc(r.today.why)}），照規則下一個交易日開盤買進。</div>`
+    : `<div class="today"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>目前<b>空手</b>，今天沒有買進訊號，照規則<b>繼續觀望</b>。</div>`;
+}
+
+function compareMethods(P, code) {
+  const mine = loadMine(), base = cfg();
+  const list = TEMPLATES.map((t, i) => ({ key: i, name: t.name, t })).concat(mine.map((t, i) => ({ key: 'm' + i, name: '📁 ' + t.name, t })));
+  const out = list.map(m => ({ m, r: backtest(P, Object.assign({}, base, { entry: m.t.entry, exit: m.t.exit, mode: m.t.mode || 'all' }), code.startsWith('00')) }));
+  out.sort((a, b) => b.r.ret - a.r.ret);
+  const rows = out.map((o, k) => `<tr data-k="${o.m.key}" class="${S.tpl === o.m.key ? 'on' : ''}"><td>${k + 1}. ${esc(o.m.name)}</td>
+      <td class="${cls(o.r.ret)}">${pct(o.r.ret)}</td><td class="${cls(o.r.ret - o.r.bh)}">${pct(o.r.ret - o.r.bh)}</td>
+      <td>${o.r.win == null ? '—' : (o.r.win * 100).toFixed(0) + '%'}</td><td>${o.r.n}</td><td class="down">${pct(o.r.mdd)}</td>
+      <td>${o.r.open ? (o.r.today && o.r.today.sell ? '賣' : '持有') : (o.r.today && o.r.today.buy ? '<b class="up">買</b>' : '空手')}</td></tr>`).join('');
+  return `<section><h2>方法比較</h2><p class="hint" style="margin:0 0 6px">同一檔股票、同樣的交易設定，所有方法的表現排名。點任一列看那個方法的買賣點。</p>
+    <div class="tscroll"><table class="cmp"><tr><th>方法</th><th>報酬</th><th>贏持有</th><th>勝率</th><th>次數</th><th>最大回檔</th><th>今天</th></tr>${rows}</table></div></section>`;
+}
+
 async function runSingle() {
   const code = S.code; if (!code) throw new Error('請先選一檔股票');
   const P = await loadPx(code), r = backtest(P, cfg(), code.startsWith('00'));
+  LAST = r; SEL = null;
   const beat = r.ret - r.bh;
-  const verdict = r.n === 0 && !r.open ? '這段期間沒有出現買進訊號，可以換個條件或放寬參數。'
+  const verdict = r.n === 0 && !r.open ? '這段期間沒有出現買進訊號，可以換個方法或放寬參數。'
     : beat >= 0 ? `這套規則在 ${esc(NAMES[code] || code)} 上<b class="up">贏過買進持有 ${(beat * 100).toFixed(1)} 個百分點</b>`
     : `這套規則在 ${esc(NAMES[code] || code)} 上<b class="down">輸給買進持有 ${(-beat * 100).toFixed(1)} 個百分點</b>`;
   const mddNote = r.mdd > r.bhMdd ? (beat >= 0 ? '，而且最大回檔比較小（風險較低）' : '，但最大回檔比較小（風險較低）') : '';
-  let html = `<div class="verdict">${verdict}${r.n || r.open ? mddNote + '。' : ''}</div>
+  const curName = typeof S.tpl === 'number' ? TEMPLATES[S.tpl].name : typeof S.tpl === 'string' ? (loadMine()[+S.tpl.slice(1)] || {}).name : '自訂規則';
+  const html = `${todayBox(r, code)}
+    <div class="verdict"><span class="hint" style="display:block;margin:0 0 4px">方法：${esc(curName || '自訂規則')}</span>${verdict}${r.n || r.open ? mddNote + '。' : ''}</div>
+    <section id="sec-px"><h2>買賣點</h2>
+      <div class="lg" id="pxlg"></div>
+      <div class="rng" id="rng"><button data-r="63">3 個月</button><button data-r="125">6 個月</button><button data-r="0">全部</button></div>
+      <div id="px"></div>
+      <p class="hint" style="margin:4px 0 0">▲ 買進、▼ 賣出（隔天開盤成交價）；連線紅色 = 這筆賺錢、綠色 = 賠錢。點下面交易明細的任一筆，圖會跳到那一筆。</p></section>
     <div class="stats">
       ${statBox('策略總報酬', pct(r.ret), `${money(r.final)} 元`, cls(r.ret))}
       ${statBox('買進持有', pct(r.bh), '同期間一直抱著', cls(r.bh))}
@@ -519,50 +592,105 @@ async function runSingle() {
       ${statBox('平均持有', r.avgDays == null ? '—' : r.avgDays.toFixed(0) + ' 天', '')}
       ${statBox('持股時間', (r.exposure * 100).toFixed(0) + '%', '有持股的天數比例')}
     </div>
+    <section><h2>交易明細</h2><p class="hint" style="margin:0 0 6px">每筆顯示日期、成交價和原因。點一筆看它在圖上的位置。</p>${tradeTable(r)}</section>
+    ${compareMethods(P, code)}
     <section><h2>資金曲線</h2>
       <div class="lg"><span><i style="background:var(--accent)"></i>這套規則</span><span><i class="dot" style="border-color:var(--muted)"></i>買進持有</span></div>
-      <div id="eq"></div></section>
-    <section><h2>買賣點</h2>
-      <div class="lg"><span><i style="background:var(--ink)"></i>收盤價</span><span><i class="tri" style="border-bottom:8px solid var(--up)"></i>買進</span><span><i class="tri" style="border-top:8px solid var(--down)"></i>賣出</span></div>
-      <div id="px"></div></section>
-    <section><h2>交易明細</h2>${tradeTable(r)}</section>`;
+      <div id="eq"></div></section>`;
   $('results').innerHTML = html;
-  drawCharts(r);
+  RANGE = RANGE ?? (matchMedia('(max-width: 640px)').matches ? 125 : 0);
+  document.querySelectorAll('#rng button').forEach(b => b.addEventListener('click', () => { RANGE = +b.dataset.r; SEL = null; drawPx(); }));
+  document.querySelectorAll('.trades tr[data-t]').forEach(tr => tr.addEventListener('click', () => {
+    SEL = +tr.dataset.t; drawPx(); document.querySelectorAll('.trades tr').forEach(x => x.classList.toggle('sel', x === tr));
+    $('sec-px').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  document.querySelectorAll('.cmp tr[data-k]').forEach(tr => tr.addEventListener('click', () => {
+    const k = tr.dataset.k; applyTemplate(k[0] === 'm' ? k : +k); runSingle().then(() => $('results').scrollIntoView({ behavior: 'smooth' }));
+  }));
+  drawPx(); drawEq(r);
 }
 
 function tradeTable(r) {
   if (!r.trades.length && !r.open) return '<div class="empty">沒有交易</div>';
   const md = (d) => d.slice(2).replace(/-/g, '/');
-  const rows = r.trades.slice().reverse().map(t => `<tr><td>${md(t.bd)}<br><small>${t.bp}</small></td><td>${md(t.sd)}<br><small>${t.sp}</small></td>
-      <td class="${cls(t.ret)}">${pct(t.ret)}</td><td>${t.days} 天</td><td>${esc(t.why)}</td></tr>`);
-  if (r.open) rows.unshift(`<tr><td>${md(r.open.bd)}<br><small>${r.open.bp}</small></td><td>持有中</td><td class="${cls(r.open.ret)}">${pct(r.open.ret)}</td><td>${r.open.days} 天</td><td>尚未賣出</td></tr>`);
-  return `<div class="tscroll"><table><tr><th>買進（日期／價）</th><th>賣出</th><th>報酬</th><th>持有</th><th>賣出原因</th></tr>${rows.join('')}</table></div>`;
+  const rows = r.trades.map((t, k) => `<tr data-t="${k}"><td>${md(t.bd)}<br><small>${t.bp}</small><span class="why">${esc(t.bwhy || '')}</span></td>
+      <td>${md(t.sd)}<br><small>${t.sp}</small><span class="why">${esc(t.why)}</span></td>
+      <td class="${cls(t.ret)}">${pct(t.ret)}</td><td>${t.days} 天</td></tr>`).reverse();
+  if (r.open) rows.unshift(`<tr data-t="-1"><td>${md(r.open.bd)}<br><small>${r.open.bp}</small><span class="why">${esc(r.open.bwhy || '')}</span></td><td>持有中</td><td class="${cls(r.open.ret)}">${pct(r.open.ret)}</td><td>${r.open.days} 天</td></tr>`);
+  return `<div class="tscroll"><table class="trades"><tr><th>買進</th><th>賣出</th><th>報酬</th><th>持有</th></tr>${rows.join('')}</table></div>`;
 }
 
-function drawCharts(r) {
+function chartBase() {
   const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
-  const C = { muted: v('--muted'), grid: v('--grid'), up: v('--up'), down: v('--down'), accent: v('--accent'), ink: v('--ink') };
+  const C = { muted: v('--muted'), grid: v('--grid'), up: v('--up'), down: v('--down'), accent: v('--accent'), ink: v('--ink'), ma5: v('--ma5'), ma60: v('--ma60') };
   const mobile = matchMedia('(max-width: 640px)').matches;
   const font = { family: '-apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif', color: C.muted, size: mobile ? 11 : 12 };
-  const x = r.dates;
-  const step = Math.ceil(x.length / (mobile ? 4 : 7)), tv = x.filter((_, i) => i % step === Math.floor(step / 2));
-  const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false, dragmode: false, hovermode: 'x unified',
+  const xaxis = (x) => { const step = Math.ceil(x.length / (mobile ? 4 : 7)), tv = x.filter((_, i) => i % step === Math.floor(step / 2));
+    return { type: 'category', tickvals: tv, ticktext: tv.map(d => x.length > 140 ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/')),
+             tickangle: 0, showgrid: false, fixedrange: true, tickfont: font, linecolor: C.grid, rangeslider: { visible: false } }; };
+  const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false, dragmode: false, hovermode: 'closest',
     margin: mobile ? { l: 2, r: 6, t: 6, b: 24 } : { l: 6, r: 10, t: 8, b: 28 },
-    xaxis: { type: 'category', tickvals: tv, ticktext: tv.map(d => d.slice(2, 7).replace('-', '/')), tickangle: 0, showgrid: false, fixedrange: true, tickfont: font, linecolor: C.grid },
-    yaxis: { side: 'right', gridcolor: C.grid, fixedrange: true, tickfont: font, automargin: true, nticks: 5 } };
-  const cfg0 = { responsive: true, displayModeBar: false };
-  const cap = r.equity[0];
+    yaxis: { side: 'right', gridcolor: C.grid, fixedrange: true, tickfont: font, automargin: true, nticks: 6 } };
+  return { C, mobile, font, xaxis, base, cfg: { responsive: true, displayModeBar: false } };
+}
+
+// 規則用到的指標線（畫在 K 線圖上）
+function overlays(r, C) {
+  const I = r.I, out = [], seen = new Set();
+  const colors = [C.ma5, C.accent, C.ma60];
+  const addMa = (n) => { if (seen.has('ma' + n)) return; seen.add('ma' + n); out.push({ name: `${n} 日均線`, y: I.ma(n), color: colors[out.length % 3] }); };
+  for (const rule of [...r.ent, ...r.ex]) {
+    const id = rule.id, p = rule.p;
+    if (id === 'ma_up' || id === 'ma_dn') { addMa(p.s); addMa(p.l); }
+    if (id === 'above_ma' || id === 'below_ma') addMa(p.n);
+    if (id === 'ma_bull') { addMa(5); addMa(20); addMa(60); }
+    if ((id === 'bb_up' || id === 'bb_low' || id === 'bb_touch') && !seen.has('bb')) {
+      seen.add('bb'); const b = I.bb(); out.push({ name: '布林上緣', y: b.up, color: C.muted, dash: 'dot' }, { name: '布林下緣', y: b.low, color: C.muted, dash: 'dot' }); }
+    if (id === 'breakout' && !seen.has('hp')) { seen.add('hp'); out.push({ name: `前 ${p.n} 日最高`, y: I.hiPrev(p.n), color: C.muted, dash: 'dash' }); }
+    if (id === 'breakdown' && !seen.has('lp')) { seen.add('lp'); out.push({ name: `前 ${p.n} 日最低`, y: I.loPrev(p.n), color: C.muted, dash: 'dash' }); }
+  }
+  return out;
+}
+
+function drawPx() {
+  const r = LAST; if (!r) return;
+  const { C, xaxis, base, cfg } = chartBase(), I = r.I, P = r.P, N = I.n;
+  document.querySelectorAll('#rng button').forEach(b => b.classList.toggle('on', +b.dataset.r === RANGE && SEL == null));
+  // 顯示範圍
+  let s0 = r.start, s1 = N - 1;
+  if (SEL != null) {
+    const t = SEL === -1 ? { bi: r.open.bi, si: N - 1 } : r.trades[SEL];
+    s0 = Math.max(r.start, t.bi - 25); s1 = Math.min(N - 1, t.si + 25);
+  } else if (RANGE) s0 = Math.max(r.start, N - RANGE);
+  const sl = (a) => a.slice(s0, s1 + 1), x = sl(P.d), inR = (i) => i >= s0 && i <= s1;
+  const ov = overlays(r, C);
+  $('pxlg').innerHTML = `<span><i style="background:var(--up)"></i>K 線</span>` + ov.map(o => `<span><i class="${o.dash ? 'dot' : ''}" style="${o.dash ? 'border-color' : 'background'}:${o.color}"></i>${esc(o.name)}</span>`).join('');
+  const all = r.trades.map((t, k) => ({ ...t, k })).concat(r.open ? [{ bi: r.open.bi, bp: r.open.bp, si: null, k: -1, ret: r.open.ret, bwhy: r.open.bwhy }] : []);
+  const buys = all.filter(t => inR(t.bi)), sells = all.filter(t => t.si != null && inR(t.si));
+  const traces = [
+    { type: 'candlestick', x, open: sl(I.o), high: sl(I.h), low: sl(I.l), close: sl(I.c), hoverinfo: 'skip',
+      increasing: { line: { color: C.up, width: 1 }, fillcolor: C.up }, decreasing: { line: { color: C.down, width: 1 }, fillcolor: C.down } },
+    ...ov.map(o => ({ type: 'scatter', mode: 'lines', x, y: sl(o.y), line: { color: o.color, width: 1.3, dash: o.dash }, hoverinfo: 'skip' })),
+    { type: 'scatter', mode: 'markers+text', x: buys.map(t => P.d[t.bi]), y: buys.map(t => I.l[t.bi] * 0.985), text: buys.map(() => '買'),
+      textposition: 'bottom center', textfont: { color: C.up, size: 12 }, marker: { symbol: 'triangle-up', size: buys.map(t => t.k === SEL ? 16 : 12), color: C.up },
+      hovertext: buys.map(t => `買進 ${t.bp}<br>${t.bwhy || ''}`), hoverinfo: 'text' },
+    { type: 'scatter', mode: 'markers+text', x: sells.map(t => P.d[t.si]), y: sells.map(t => I.h[t.si] * 1.015), text: sells.map(() => '賣'),
+      textposition: 'top center', textfont: { color: C.down, size: 12 }, marker: { symbol: 'triangle-down', size: sells.map(t => t.k === SEL ? 16 : 12), color: C.down },
+      hovertext: sells.map(t => `賣出 ${t.sp}（${pct(t.ret)}）<br>${t.why}`), hoverinfo: 'text' },
+  ];
+  // 買點到賣點的連線（紅 = 賺、綠 = 賠）
+  const shapes = all.filter(t => t.si != null && inR(t.bi) && inR(t.si)).map(t => ({
+    type: 'line', xref: 'x', yref: 'y', x0: P.d[t.bi], x1: P.d[t.si], y0: t.bp, y1: t.sp,
+    line: { color: t.ret >= 0 ? C.up : C.down, width: t.k === SEL ? 3 : 1.6, dash: 'dot' } }));
+  Plotly.react('px', traces, Object.assign({}, base, { xaxis: xaxis(x), shapes }), cfg);
+}
+
+function drawEq(r) {
+  const { C, xaxis, base, cfg } = chartBase(), x = r.dates, cap = r.equity[0];
   Plotly.react('eq', [
-    { type: 'scatter', mode: 'lines', x, y: r.equity.map(e => (e / cap - 1) * 100), line: { color: C.accent, width: 2 }, name: '規則', hovertemplate: '%{y:+.1f}%' },
-    { type: 'scatter', mode: 'lines', x, y: r.bhEq.map(e => (e / cap - 1) * 100), line: { color: C.muted, width: 1.5, dash: 'dot' }, name: '持有', hovertemplate: '%{y:+.1f}%' },
-  ], Object.assign({}, base, { yaxis: Object.assign({}, base.yaxis, { ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }) }), cfg0);
-  const buys = r.trades.map(t => t.bd).concat(r.open ? [r.open.bd] : []), sells = r.trades.map(t => t.sd);
-  const at = (ds) => ds.map(d => r.close[x.indexOf(d)]);
-  Plotly.react('px', [
-    { type: 'scatter', mode: 'lines', x, y: r.close, line: { color: C.ink, width: 1.2 }, name: '收盤', hovertemplate: '%{y:.2f}' },
-    { type: 'scatter', mode: 'markers', x: buys, y: at(buys), marker: { symbol: 'triangle-up', size: 11, color: C.up }, name: '買', hovertemplate: '買進' },
-    { type: 'scatter', mode: 'markers', x: sells, y: at(sells), marker: { symbol: 'triangle-down', size: 11, color: C.down }, name: '賣', hovertemplate: '賣出' },
-  ], base, cfg0);
+    { type: 'scatter', mode: 'lines', x, y: r.equity.map(e => (e / cap - 1) * 100), line: { color: C.accent, width: 2 }, hovertemplate: '規則 %{y:+.1f}%<extra></extra>' },
+    { type: 'scatter', mode: 'lines', x, y: r.bhEq.map(e => (e / cap - 1) * 100), line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '持有 %{y:+.1f}%<extra></extra>' },
+  ], Object.assign({}, base, { hovermode: 'x unified', xaxis: xaxis(x), yaxis: Object.assign({}, base.yaxis, { ticksuffix: '%', zeroline: true, zerolinecolor: C.muted }) }), cfg);
 }
 
 async function runMulti() {
