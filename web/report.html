@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <title>個股報告</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="kchart.js"></script>
 <style>
   :root {
     --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65;
@@ -126,6 +128,17 @@
   .media a.item:active b, .media a.item:hover b { color: var(--ma20); }
   .more-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .more-links a { text-decoration: none; color: var(--ma20); border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px; font-size: 13px; }
+  .tfbar { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 6px 0; }
+  .tfbar::-webkit-scrollbar { display: none; }
+  .tfbar button { flex: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+  .tfbar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+  .tfbar button:disabled { color: var(--muted); opacity: .45; }
+  .kinfo { font-size: 12px; font-variant-numeric: tabular-nums; min-height: 36px; line-height: 1.5; }
+  .kinfo .ki-row { display: flex; flex-wrap: wrap; gap: 0 10px; }
+  .kinfo em { font-style: normal; font-weight: 600; }
+  .kinfo .ki-ma { font-size: 11px; }
+  .kc { height: 440px; position: relative; }
+  @media (max-width: 640px) { .kc { height: 380px; } }
   .chart { width: 100%; }
   #inst { height: 240px; } #rev { height: 260px; }
   #price { height: 460px; } #vol { height: 260px; } #macd { height: 280px; } #kdj { height: 280px; } #bt { height: 300px; }
@@ -235,16 +248,15 @@
       </div>
     </div>
     <section>
-      <h2>股價與均線</h2>
-      <p class="hint">點一下圖（電腦用滑鼠移上去）可以看當天的數字。上方按鈕切換要看多久。</p>
-      <div class="lg">
-        <span><i class="box" style="background:var(--up)"></i>漲</span>
-        <span><i class="box" style="background:var(--down)"></i>跌</span>
-        <span><i style="background:var(--ma5)"></i>MA5 週線</span>
-        <span><i style="background:var(--ma20)"></i>MA20 月線</span>
-        <span><i style="background:var(--ma60)"></i>MA60 季線</span>
+      <h2>K 線圖</h2>
+      <div class="tfbar" id="tfbar"></div>
+      <div class="kinfo" id="kinfo"></div>
+      <div id="kc" class="kc"></div>
+      <div class="lg" style="margin-top:6px">
+        <span><i style="background:var(--ma5)"></i>MA5</span><span><i style="background:var(--ma20)"></i>MA10</span>
+        <span><i style="background:var(--ma60)"></i>MA20</span><span><i style="background:#20a39e"></i>MA60</span>
       </div>
-      <div id="price" class="chart"></div>
+      <p class="hint" id="kchint" style="margin:4px 0 0">點一下圖會出現十字線，按住左右拖曳可以看前後每一根 K 棒的價格；左右滑動移動圖表，兩指縮放。</p>
     </section>
     <section>
       <h2>量能</h2>
@@ -446,6 +458,7 @@ function show(R) {
   showChipFund(R);
   showScore(R);
   showMedia(R);
+  setupPro(R);
   $('btlink').href = 'backtest.html?code=' + encodeURIComponent(R.code);
   showPtt(R);
 
@@ -565,6 +578,43 @@ function showMedia(R) {
   $('morelinks').innerHTML = `<span class="hint" style="margin:0;align-self:center">看更多新聞：</span>
     <a href="https://tw.stock.yahoo.com/quote/${encodeURIComponent(R.ticker)}/news" target="_blank" rel="noopener noreferrer">Yahoo 股市</a>
     <a href="https://news.google.com/search?q=${q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" target="_blank" rel="noopener noreferrer">Google 新聞</a>`;
+}
+
+
+// ---------- 看盤 K 線圖 ----------
+const KCH = { kc: null, tf: 'D', px: null, ix: null };
+window.KCH = KCH;
+async function setupPro(R) {
+  if (!window.LightweightCharts || !window.KChart) { $('kchint').textContent = 'K 線圖元件載入失敗，請重新整理。'; return; }
+  KCH.kc = KChart.create($('kc'), { info: $('kinfo') });
+  const bar = $('tfbar');
+  bar.innerHTML = KChart.TF.map(([k, t]) => `<button data-tf="${k}" ${!R.ix && !'DWM'.includes(k) ? 'disabled' : ''}>${t}</button>`).join('');
+  if (!R.ix) $('kchint').textContent += '（這檔股票沒有分鐘 K 資料：分鐘線只提供成交金額前 500 名、自選股、注意 / 處置股與熱門討論股）';
+  else $('kchint').textContent += '（分鐘線每天收盤後更新，不是即時報價）';
+  bar.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setTf(b.dataset.tf)));
+  try { KCH.px = await fetch(`px/${encodeURIComponent(R.code)}.json`, { cache: 'no-cache' }).then(r => r.json()); } catch (e) { KCH.px = null; }
+  await setTf('D', true);
+}
+async function setTf(tf, first) {
+  KCH.tf = tf;
+  document.querySelectorAll('#tfbar button').forEach(b => b.classList.toggle('on', b.dataset.tf === tf));
+  let bars = [], intraday = false;
+  if ('DWM'.includes(tf)) {
+    if (!KCH.px) return;
+    const d = KChart.fromDaily(KCH.px);
+    bars = tf === 'D' ? d : KChart.aggPeriod(d, tf);
+  } else {
+    if (!KCH.ix) { try { KCH.ix = await fetch(`ix/${encodeURIComponent(code)}.json`, { cache: 'no-cache' }).then(r => r.json()); } catch (e) { KCH.ix = {}; } }
+    intraday = true;
+    if (tf === '1') bars = KChart.fromIntraday(KCH.ix.m1);
+    else { const m5 = KChart.fromIntraday(KCH.ix.m5); bars = tf === '5' ? m5 : KChart.aggMinutes(m5, +tf); }
+    if (!bars.length) { $('kinfo').textContent = '沒有這個週期的資料'; }
+  }
+  KCH.kc.setBars(bars, { intraday });
+  const mobile = matchMedia('(max-width: 640px)').matches;
+  const seg = document.querySelector('#seg button.on');
+  const n = tf === 'D' ? (first && seg ? +seg.dataset.n : (mobile ? 63 : 126)) : tf === 'W' ? 60 : tf === 'M' ? 0 : (mobile ? 60 : 120);
+  KCH.kc.showLast(n >= 100000 ? 0 : n);
 }
 
 // ---------- 綜合評分 ----------
@@ -723,14 +773,8 @@ function setupCharts(R) {
     const line = (name, y, color, w = 1.5, fmt = '%{y:.2f}') =>
       ({ type: 'scatter', mode: 'lines', name, x, y, line: { color, width: w }, hovertemplate: fmt, connectgaps: false });
 
-    // 股價
-    Plotly.react('price', [
-      { type: 'candlestick', name: 'K線', x, open: cut(D.open), high: cut(D.high), low: cut(D.low), close: cut(D.close),
-        text: ohlc, hoverinfo: 'text',
-        increasing: { line: { color: C.up, width: 1 }, fillcolor: C.up },
-        decreasing: { line: { color: C.down, width: 1 }, fillcolor: C.down } },
-      line('MA5', cut(D.ma5), C.ma5, 1.3), line('MA20', cut(D.ma20), C.ma20), line('MA60', cut(D.ma60), C.ma60),
-    ], lay(x, { yaxis: yax({}) }), cfg);
+    // K 線圖（看盤圖）跟著期間按鈕縮放
+    if (window.KCH && KCH.tf === 'D') KCH.kc.showLast(n >= 100000 ? 0 : n);
 
     // 量能
     Plotly.react('vol', [

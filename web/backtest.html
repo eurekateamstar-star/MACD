@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <title>回測實驗室｜台股學習站</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="kchart.js"></script>
 <style>
   :root {
     --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65; --line: #e4e2db; --soft: #efeee8; --grid: #ecebe5;
@@ -118,7 +120,9 @@
   .lg i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
   .lg i.dot { background: none; border-top: 2px dotted; height: 0; }
   .lg i.tri { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
-  #eq { height: 260px; } #px { height: 400px; }
+  #eq { height: 260px; } #px { height: 420px; position: relative; }
+  .kinfo { font-size: 12px; font-variant-numeric: tabular-nums; min-height: 36px; line-height: 1.5; }
+  .kinfo .ki-row { display: flex; flex-wrap: wrap; gap: 0 10px; } .kinfo em { font-style: normal; font-weight: 600; } .kinfo .ki-ma { font-size: 11px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   th, td { padding: 7px 4px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; border-top: 0; }
@@ -139,7 +143,7 @@
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
   @media (max-width: 640px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    #eq { height: 220px; } #px { height: 340px; }
+    #eq { height: 220px; } #px { height: 360px; }
   }
 </style>
 </head>
@@ -567,7 +571,7 @@ function compareMethods(P, code) {
 async function runSingle() {
   const code = S.code; if (!code) throw new Error('請先選一檔股票');
   const P = await loadPx(code), r = backtest(P, cfg(), code.startsWith('00'));
-  LAST = r; SEL = null;
+  LAST = r; SEL = null; KC = null;
   const beat = r.ret - r.bh;
   const verdict = r.n === 0 && !r.open ? '這段期間沒有出現買進訊號，可以換個方法或放寬參數。'
     : beat >= 0 ? `這套規則在 ${esc(NAMES[code] || code)} 上<b class="up">贏過買進持有 ${(beat * 100).toFixed(1)} 個百分點</b>`
@@ -579,8 +583,9 @@ async function runSingle() {
     <section id="sec-px"><h2>買賣點</h2>
       <div class="lg" id="pxlg"></div>
       <div class="rng" id="rng"><button data-r="63">3 個月</button><button data-r="125">6 個月</button><button data-r="0">全部</button></div>
+      <div class="kinfo" id="pxinfo"></div>
       <div id="px"></div>
-      <p class="hint" style="margin:4px 0 0">▲ 買進、▼ 賣出（隔天開盤成交價）；連線紅色 = 這筆賺錢、綠色 = 賠錢。點下面交易明細的任一筆，圖會跳到那一筆。</p></section>
+      <p class="hint" style="margin:4px 0 0">▲ 買進、▼ 賣出（隔天開盤成交價）；虛線紅色 = 這筆賺錢、綠色 = 賠錢。點一下圖出現十字線，按住拖曳看前後價格；左右滑動、兩指縮放。點下面交易明細的任一筆，圖會跳到那一筆。</p></section>
     <div class="stats">
       ${statBox('策略總報酬', pct(r.ret), `${money(r.final)} 元`, cls(r.ret))}
       ${statBox('買進持有', pct(r.bh), '同期間一直抱著', cls(r.bh))}
@@ -652,37 +657,31 @@ function overlays(r, C) {
   return out;
 }
 
+let KC = null;
 function drawPx() {
   const r = LAST; if (!r) return;
-  const { C, xaxis, base, cfg } = chartBase(), I = r.I, P = r.P, N = I.n;
+  const { C } = chartBase(), I = r.I, P = r.P, N = I.n;
   document.querySelectorAll('#rng button').forEach(b => b.classList.toggle('on', +b.dataset.r === RANGE && SEL == null));
-  // 顯示範圍
-  let s0 = r.start, s1 = N - 1;
+  if (!window.LightweightCharts || !window.KChart) { $('px').textContent = 'K 線圖元件載入失敗，請重新整理。'; return; }
+  if (!KC || !document.body.contains(KC.el)) {
+    KC = KChart.create($('px'), { info: $('pxinfo'), mas: [] }); KC.el = $('px');
+    KC.setBars(KChart.fromDaily(P), { intraday: false });
+    const ov = overlays(r, C);
+    $('pxlg').innerHTML = `<span><i style="background:var(--up)"></i>K 線</span>` + ov.map(o => `<span><i class="${o.dash ? 'dot' : ''}" style="${o.dash ? 'border-color' : 'background'}:${o.color}"></i>${esc(o.name)}</span>`).join('');
+    KC.setLines(ov.map(o => ({ name: o.name, color: o.color, dash: !!o.dash, data: o.y.map((v, i) => ({ time: P.d[i], value: v })) })));
+  }
+  const all = r.trades.map((t, k) => ({ ...t, k })).concat(r.open ? [{ bi: r.open.bi, bp: r.open.bp, si: null, k: -1, ret: r.open.ret, bwhy: r.open.bwhy }] : []);
+  const marks = [];
+  for (const t of all) {
+    marks.push({ time: P.d[t.bi], position: 'belowBar', shape: 'arrowUp', color: C.up, text: '買', size: t.k === SEL ? 2 : 1 });
+    if (t.si != null) marks.push({ time: P.d[t.si], position: 'aboveBar', shape: 'arrowDown', color: C.down, text: `賣 ${pct(t.ret, 0)}`, size: t.k === SEL ? 2 : 1 });
+  }
+  KC.setMarkers(marks);
+  KC.setSegments(all.filter(t => t.si != null).map(t => ({ t0: P.d[t.bi], v0: t.bp, t1: P.d[t.si], v1: t.sp, color: t.ret >= 0 ? C.up : C.down, width: t.k === SEL ? 3 : 2 })));
   if (SEL != null) {
     const t = SEL === -1 ? { bi: r.open.bi, si: N - 1 } : r.trades[SEL];
-    s0 = Math.max(r.start, t.bi - 25); s1 = Math.min(N - 1, t.si + 25);
-  } else if (RANGE) s0 = Math.max(r.start, N - RANGE);
-  const sl = (a) => a.slice(s0, s1 + 1), x = sl(P.d), inR = (i) => i >= s0 && i <= s1;
-  const ov = overlays(r, C);
-  $('pxlg').innerHTML = `<span><i style="background:var(--up)"></i>K 線</span>` + ov.map(o => `<span><i class="${o.dash ? 'dot' : ''}" style="${o.dash ? 'border-color' : 'background'}:${o.color}"></i>${esc(o.name)}</span>`).join('');
-  const all = r.trades.map((t, k) => ({ ...t, k })).concat(r.open ? [{ bi: r.open.bi, bp: r.open.bp, si: null, k: -1, ret: r.open.ret, bwhy: r.open.bwhy }] : []);
-  const buys = all.filter(t => inR(t.bi)), sells = all.filter(t => t.si != null && inR(t.si));
-  const traces = [
-    { type: 'candlestick', x, open: sl(I.o), high: sl(I.h), low: sl(I.l), close: sl(I.c), hoverinfo: 'skip',
-      increasing: { line: { color: C.up, width: 1 }, fillcolor: C.up }, decreasing: { line: { color: C.down, width: 1 }, fillcolor: C.down } },
-    ...ov.map(o => ({ type: 'scatter', mode: 'lines', x, y: sl(o.y), line: { color: o.color, width: 1.3, dash: o.dash }, hoverinfo: 'skip' })),
-    { type: 'scatter', mode: 'markers+text', x: buys.map(t => P.d[t.bi]), y: buys.map(t => I.l[t.bi] * 0.985), text: buys.map(() => '買'),
-      textposition: 'bottom center', textfont: { color: C.up, size: 12 }, marker: { symbol: 'triangle-up', size: buys.map(t => t.k === SEL ? 16 : 12), color: C.up },
-      hovertext: buys.map(t => `買進 ${t.bp}<br>${t.bwhy || ''}`), hoverinfo: 'text' },
-    { type: 'scatter', mode: 'markers+text', x: sells.map(t => P.d[t.si]), y: sells.map(t => I.h[t.si] * 1.015), text: sells.map(() => '賣'),
-      textposition: 'top center', textfont: { color: C.down, size: 12 }, marker: { symbol: 'triangle-down', size: sells.map(t => t.k === SEL ? 16 : 12), color: C.down },
-      hovertext: sells.map(t => `賣出 ${t.sp}（${pct(t.ret)}）<br>${t.why}`), hoverinfo: 'text' },
-  ];
-  // 買點到賣點的連線（紅 = 賺、綠 = 賠）
-  const shapes = all.filter(t => t.si != null && inR(t.bi) && inR(t.si)).map(t => ({
-    type: 'line', xref: 'x', yref: 'y', x0: P.d[t.bi], x1: P.d[t.si], y0: t.bp, y1: t.sp,
-    line: { color: t.ret >= 0 ? C.up : C.down, width: t.k === SEL ? 3 : 1.6, dash: 'dot' } }));
-  Plotly.react('px', traces, Object.assign({}, base, { xaxis: xaxis(x), shapes }), cfg);
+    KC.focus(P.d[t.bi], P.d[t.si], 20);
+  } else KC.showLast(RANGE ? RANGE : N - r.start);
 }
 
 function drawEq(r) {

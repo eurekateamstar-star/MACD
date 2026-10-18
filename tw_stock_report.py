@@ -193,6 +193,48 @@ def download_prices(tickers: list, period: str, chunk: int = 50) -> dict:
     return result
 
 
+def download_intraday(tickers: list, interval: str, period: str, chunk: int = 50) -> dict:
+    """分鐘 K（Yahoo 只提供：1 分 K 最近 7 天、5 分 K 最近 60 天）→ {ticker: DataFrame}"""
+    out = {}
+    for i in range(0, len(tickers), chunk):
+        part = tickers[i:i + chunk]
+        data = None
+        for attempt in range(1, 3):
+            try:
+                data = yf.download(part, period=period, interval=interval, group_by="ticker", auto_adjust=True,
+                                   threads=True, progress=False, prepost=False)
+                break
+            except Exception as e:
+                print(f"  {interval} 第 {i + 1} 批下載失敗（{e}），重試…")
+                time.sleep(10)
+        if data is None or data.empty:
+            continue
+        multi = isinstance(data.columns, pd.MultiIndex)
+        have = set(data.columns.get_level_values(0)) if multi else set()
+        for t in part:
+            if multi and t not in have:
+                continue
+            df = (data[t] if multi else data).dropna(subset=["Close"])
+            if len(df):
+                out[t] = df.copy()
+        time.sleep(1)
+    print(f"  {interval} K 線：{len(out)}/{len(tickers)} 檔")
+    return out
+
+
+def intraday_json(df) -> dict:
+    """壓縮成小檔案：t0 = 第一根的時間（UTC 秒），dt = 每根和前一根相差幾分鐘"""
+    idx = df.index
+    if idx.tz is None:
+        idx = idx.tz_localize("Asia/Taipei")
+    ts = [int(x.timestamp()) for x in idx.tz_convert("UTC")]
+    return {
+        "t0": ts[0], "dt": [0] + [(b - a) // 60 for a, b in zip(ts, ts[1:])],
+        "o": clean(df["Open"]), "h": clean(df["High"]), "l": clean(df["Low"]), "c": clean(df["Close"]),
+        "v": clean(df["Volume"] / 1000, 1),
+    }
+
+
 # ============================================================
 # 3. 計算指標
 # ============================================================
@@ -777,6 +819,7 @@ def build_record(code, name, ticker, df, period, info=None, stats=None):
         "news": info.get("news", []),
         "media": info.get("media") or [],
         "media_checked": bool(info.get("media_checked")),
+        "ix": bool(info.get("ix")),
         "ptt": info.get("ptt"),
     }
     # 搜尋清單用的摘要：[代號, 名稱, 市場, 收盤, 漲跌%, 趨勢, 趨勢色, 警示]
@@ -1249,7 +1292,8 @@ def main():
         shutil.rmtree(SITE)
     (SITE / "data").mkdir(parents=True)
     (SITE / "px").mkdir(parents=True)
-    for f in ("index.html", "report.html", "screen.html", "backtest.html"):
+    (SITE / "ix").mkdir(parents=True)
+    for f in ("index.html", "report.html", "screen.html", "backtest.html", "kchart.js"):
         shutil.copy(WEB / f, SITE / f)
 
     # 交易日曆：用資料最完整的那一檔的日期
@@ -1282,6 +1326,15 @@ def main():
     flagged = set(disp) | set(cand) | {c for c, d in att.items() if latest in d}
     news_codes = list(dict.fromkeys([c for c, _ in watch] + sorted(flagged) + hot))
     ptt = fundamentals.fetch_ptt({c: (universe.get(c, ("", None))[0] or "") for c in code_ticker})
+
+    # 分鐘 K：成交金額前 500 名 + 自選股 + 注意 / 處置 + 熱門討論（全部抓資料量太大）
+    print("下載分鐘 K 線…")
+    ix_codes = list(dict.fromkeys([c for c, _ in watch] + sorted(flagged) + list(ptt)
+                                  + sorted(amt, key=amt.get, reverse=True)[:500]))
+    ix_codes = [c for c in ix_codes if c in code_ticker]
+    ix_tickers = [code_ticker[c] for c in ix_codes]
+    m5 = download_intraday(ix_tickers, "5m", "60d")
+    m1 = download_intraday(ix_tickers, "1m", "5d")
     media = fundamentals.fetch_media_news([(c, universe.get(c, ("", None))[0] or c) for c in news_codes if c in code_ticker])
     stats = BacktestStats()
 
@@ -1297,6 +1350,7 @@ def main():
             "meetings": meetings.get(code, []),
             "news": news.get(code, [])[:15],
             "media": media.get(code), "media_checked": code in news_codes, "ptt": ptt.get(code),
+            "ix": ticker in m5 or ticker in m1,
             "profile": profiles.get(code, {}),
             "extra": {"inst": inst.get(code), "margin": margin.get(code), "val": valuation.get(code),
                       "rev": revenue.get(code), "fin": financials.get(code), "holders": holders.get(code),
@@ -1310,6 +1364,14 @@ def main():
             continue
         (SITE / "data" / f"{code}.json").write_text(
             json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        # 分鐘 K（只有部分股票）
+        if ticker in m5 or ticker in m1:
+            ix = {}
+            if ticker in m5:
+                ix["m5"] = intraday_json(m5[ticker])
+            if ticker in m1:
+                ix["m1"] = intraday_json(m1[ticker])
+            (SITE / "ix" / f"{code}.json").write_text(json.dumps(ix, separators=(",", ":")), encoding="utf-8")
         # 回測用：兩年的原始股價（網頁自己計算指標）
         px = prices[ticker]
         (SITE / "px" / f"{code}.json").write_text(json.dumps({
@@ -1360,7 +1422,7 @@ def main():
            f"地雷股 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('mine')] == 1)}、"
            f"負債比 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('debt')] is not None)}、"
            f"當沖 {sum(1 for r in screen_rows if r[SCREEN_COLS.index('dt_ratio')] is not None)}、"
-           f"新聞 {len(media)} 檔、PTT 熱門 {len(ptt)} 檔、神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
+           f"分鐘K {len(m5)} 檔、新聞 {len(media)} 檔、PTT 熱門 {len(ptt)} 檔、神奇公式 {n_magic}、總分≥80 {sum(1 for r in screen_rows if (r[SCREEN_COLS.index('s_total')] or 0) >= 80)} 檔")
     if failed:
         print("沒有資料的代號（多半是新上市或暫停交易）：" + "、".join(failed[:50])
               + (" …" if len(failed) > 50 else ""))
