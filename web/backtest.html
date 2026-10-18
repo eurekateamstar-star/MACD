@@ -21,6 +21,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
          font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
   button, select, input { font: inherit; color: inherit; }
@@ -68,6 +69,11 @@
   .today .t { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   .today b { font-size: 17px; }
   .cmp tr { cursor: pointer; } .cmp tr.on td { background: var(--soft); font-weight: 700; } .cmp tr:hover td { background: var(--soft); }
+  .tfbar { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 6px 0 2px; }
+  .tfbar::-webkit-scrollbar { display: none; }
+  .tfbar button { flex: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+  .tfbar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+  .tfbar button:disabled { color: var(--muted); opacity: .45; }
   .rng { display: flex; gap: 4px; margin: 6px 0; }
   .rng button { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 99px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
   .rng button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -196,9 +202,11 @@
     <label>初始資金（元）<input id="cap" type="number" inputmode="numeric" value="1000000"></label>
     <label>買賣單位<select id="lot"><option value="1">零股（以股為單位）</option><option value="1000">整張（1000 股）</option></select></label>
     <label>手續費折扣（1 = 不打折）<input id="disc" type="number" inputmode="decimal" step="0.05" value="0.6"></label>
-    <label>回測期間<select id="period"><option value="all">全部（約兩年）</option><option value="250">最近一年</option><option value="125">最近半年</option></select></label>
+    <label>回測週期<select id="tf"><option value="D">日 K</option><option value="60">60 分 K</option><option value="30">30 分 K</option><option value="15">15 分 K</option><option value="5">5 分 K</option><option value="1">1 分 K</option></select></label>
+    <label id="periodlab">回測期間<select id="period"><option value="all">全部（約兩年）</option><option value="250">最近一年</option><option value="125">最近半年</option></select></label>
   </div>
-  <div class="hint">手續費 0.1425% × 折扣（最低 20 元）；證交稅賣出時 0.3%（ETF 0.1%）。訊號在收盤出現，隔天開盤價成交。</div>
+  <div class="hint">手續費 0.1425% × 折扣（最低 20 元）；證交稅賣出時 0.3%（ETF 0.1%）。訊號在 K 棒收盤出現，下一根 K 棒開盤價成交。</div>
+  <div class="hint" id="tfhint" hidden>分 K 回測：只有成交金額前 500 名等熱門股有分 K；5～60 分 K 約最近 60 個交易日、1 分 K 最近 5 個交易日，期間較短，結果僅供參考。規則裡的「N 日均線」「持有 N 根」在分 K 會變成 N 根 K 棒。</div>
 
   <button class="run" id="run">開始回測</button>
   <button class="save" id="save">儲存這套規則</button>
@@ -309,7 +317,7 @@ const RULES = {
     warm: () => 0, fn: (I, i, p, pos) => I.c[i] >= pos.price * (1 + p.x / 100) },
   trail: { side: 'exit', name: '移動停利', desc: '從持有期間的最高收盤價回落超過設定的 %（讓獲利奔跑、保住大部分利潤）', p: [['x', '從高點回落', 10, '%']],
     warm: () => 0, fn: (I, i, p, pos) => I.c[i] <= pos.peak * (1 - p.x / 100) },
-  hold: { side: 'exit', name: '持有滿 N 天', desc: '不管賺賠，持有滿設定的交易日就賣', p: [['n', '持有', 20, '天']],
+  hold: { side: 'exit', name: '持有滿 N 根 K 棒', desc: '不管賺賠，持有滿設定的 K 棒數就賣（日 K = N 天）', p: [['n', '持有', 20, '根']],
     warm: () => 0, fn: (I, i, p, pos) => i - pos.idx >= p.n },
 };
 
@@ -332,6 +340,13 @@ const TEMPLATES = [
     mode: 'all', entry: [['vol_burst', { x: 2, y: 3 }]], exit: [['take', { x: 15 }], ['stop', { x: 7 }], ['hold', { n: 10 }]] },
 ];
 
+// 時間：日 K 是 'YYYY-MM-DD'，分 K 是台北時間的秒數
+const tsec = (d) => typeof d === 'number' ? d : Date.parse(d + 'T09:00:00Z') / 1000;
+const fmtT = (d, long) => typeof d === 'number' ? new Date(d * 1000).toISOString().slice(5, 16).replace('-', '/').replace('T', ' ')
+  : (long ? d.slice(2) : d.slice(5)).replace(/-/g, '/');
+const unitTxt = () => S.tf === 'D' ? '天' : '根';
+const TFNAME = { D: '日 K', 60: '60 分 K', 30: '30 分 K', 15: '15 分 K', 5: '5 分 K', 1: '1 分 K' };
+
 // ============================================================
 // 回測引擎
 // ============================================================
@@ -341,7 +356,7 @@ function backtest(P, cfg, isEtf) {
   const ent = rules(cfg.entry), ex = rules(cfg.exit);
   const warm = Math.max(30, ...ent.map(r => r.R.warm(r.p)), ...ex.map(r => r.R.warm(r.p)));
   let start = Math.min(warm, N - 2);
-  if (cfg.period !== 'all') start = Math.max(start, N - +cfg.period);
+  if (cfg.period !== 'all' && !P.intraday) start = Math.max(start, N - +cfg.period);
   const feeRate = 0.001425 * cfg.disc, tax = isEtf ? 0.001 : 0.003, lot = cfg.lot;
   const fee = (amt) => Math.max(20, Math.round(amt * feeRate));
   let cash = cfg.cap, sh = 0, pos = null, pending = null, buyWhy = '', today = null;
@@ -389,11 +404,11 @@ function backtest(P, cfg, isEtf) {
   const bhEq = []; for (let i = start; i < N; i++) bhEq.push(i <= start ? cfg.cap : bhCash + bhShares * I.c[i]);
   let bpk = -Infinity, bmdd = 0; for (const e of bhEq) { bpk = Math.max(bpk, e); bmdd = Math.min(bmdd, e / bpk - 1); }
   const inMkt = trades.reduce((s, t) => s + t.days, 0) + (open ? open.days : 0);
-  const yrs = days / 250;
+  const yrs = (tsec(P.d[N - 1]) - tsec(P.d[start])) / (365 * 86400);
   return {
     start, dates: P.d.slice(start), close: I.c.slice(start), equity, bhEq, trades, open, today, I, P, ent, ex,
     lastDate: P.d[N - 1], lastClose: I.c[N - 1],
-    ret: final / cfg.cap - 1, cagr: yrs > 0.2 ? Math.pow(final / cfg.cap, 1 / yrs) - 1 : null, mdd,
+    ret: final / cfg.cap - 1, cagr: yrs >= 0.5 ? Math.pow(final / cfg.cap, 1 / yrs) - 1 : null, mdd,
     bh: bhEq[bhEq.length - 1] / cfg.cap - 1, bhMdd: bmdd,
     n: trades.length, win: trades.length ? wins.length / trades.length : null,
     avg: trades.length ? trades.reduce((s, t) => s + t.ret, 0) / trades.length : null,
@@ -408,7 +423,7 @@ function backtest(P, cfg, isEtf) {
 // ============================================================
 let LIST = [], NAMES = {}, SCREEN = null, WATCH = [];
 let S = { mode: 'single', code: '2330', msrc: 'watch', mcodes: '', tpl: 0, entryMode: 'all',
-          entry: TEMPLATES[0].entry, exit: TEMPLATES[0].exit, cap: 1000000, lot: 1, disc: 0.6, period: 'all' };
+          entry: TEMPLATES[0].entry, exit: TEMPLATES[0].exit, cap: 1000000, lot: 1, disc: 0.6, period: 'all', tf: 'D' };
 try { const v = JSON.parse(localStorage.getItem('bt')); if (v && v.entry) S = Object.assign(S, v); } catch (e) {}
 const urlCode = new URLSearchParams(location.search).get('code');
 if (urlCode) { S.code = urlCode.toUpperCase(); S.mode = 'single'; }
@@ -504,10 +519,12 @@ $('mcodes').addEventListener('input', (e) => { S.mcodes = e.target.value; save()
 $('entrymode').addEventListener('change', (e) => { S.entryMode = e.target.value; S.tpl = null; save(); renderTpl(); });
 document.querySelectorAll('.add').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.add)));
 $('sheetclose').addEventListener('click', closeSheet); $('sheetbg').addEventListener('click', closeSheet);
-for (const k of ['cap', 'lot', 'disc', 'period']) {
-  $(k).value = S[k];
-  $(k).addEventListener('change', (e) => { S[k] = k === 'period' ? e.target.value : +e.target.value; save(); });
+for (const k of ['cap', 'lot', 'disc', 'period', 'tf']) {
+  $(k).value = S[k] || (k === 'tf' ? 'D' : '');
+  $(k).addEventListener('change', (e) => { S[k] = (k === 'period' || k === 'tf') ? e.target.value : +e.target.value; save(); tfUi(); });
 }
+function tfUi() { $('periodlab').hidden = S.tf !== 'D'; $('tfhint').hidden = S.tf === 'D'; }
+tfUi();
 $('save').addEventListener('click', () => {
   if (!S.entry.length || !S.exit.length) { alert('買進和賣出都至少要一個條件。'); return; }
   const name = (prompt('幫這套規則取個名字：', '我的規則 ' + (loadMine().length + 1)) || '').trim();
@@ -519,12 +536,29 @@ $('save').addEventListener('click', () => {
 // ============================================================
 // 執行
 // ============================================================
-const pxCache = {};
+const pxCache = {}, ixCache = {};
 async function loadPx(code) {
   if (pxCache[code]) return pxCache[code];
   const r = await fetch(`px/${encodeURIComponent(code)}.json`, { cache: 'no-cache' });
   if (!r.ok) throw new Error('沒有資料');
   return (pxCache[code] = await r.json());
+}
+async function loadIx(code) {
+  if (code in ixCache) return ixCache[code];
+  try { const r = await fetch(`ix/${encodeURIComponent(code)}.json`, { cache: 'no-cache' }); ixCache[code] = r.ok ? await r.json() : null; }
+  catch (e) { ixCache[code] = null; }
+  return ixCache[code];
+}
+// 依週期取得 K 棒：{d, o, h, l, c, v, intraday}
+const toP = (bars, intraday) => ({ d: bars.map(b => b.time), o: bars.map(b => b.open), h: bars.map(b => b.high), l: bars.map(b => b.low),
+                                   c: bars.map(b => b.close), v: bars.map(b => b.volume), intraday });
+async function loadSeries(code, tf) {
+  if (tf === 'D') return Object.assign({}, await loadPx(code), { intraday: false });
+  const ix = await loadIx(code);
+  if (!ix) throw new Error('這檔股票沒有分 K 資料（分 K 只提供成交金額前 500 名等熱門股），請改用日 K 回測');
+  const bars = tf === '1' ? KChart.fromIntraday(ix.m1) : tf === '5' ? KChart.fromIntraday(ix.m5) : KChart.aggMinutes(KChart.fromIntraday(ix.m5), +tf);
+  if (bars.length < 40) throw new Error('分 K 資料太少，無法回測');
+  return toP(bars, true);
 }
 function cfg() { return { entry: S.entry, exit: S.exit, mode: S.entryMode, cap: +S.cap || 1000000, lot: +S.lot || 1, disc: +S.disc || 1, period: S.period }; }
 
@@ -542,12 +576,12 @@ function statBox(label, val, sub, c) { return `<div class="stat"><div class="lab
 let LAST = null, RANGE = null, SEL = null;
 
 function todayBox(r, code) {
-  const md = (d) => d.slice(5).replace('-', '/');
+  const md = (d) => fmtT(d);
   const name = esc(NAMES[code] || code), date = md(r.lastDate);
   if (r.open) {
     const held = `目前<b>持有中</b>：${md(r.open.bd)} 以 ${r.open.bp} 元買進（${esc(r.open.bwhy || '買進訊號')}），到 ${date} 報酬 <b class="${cls(r.open.ret)}">${pct(r.open.ret)}</b>。`;
     return r.today && r.today.sell
-      ? `<div class="today sell"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>${held}<br>⚠ <b>今天出現賣出訊號</b>（${esc(r.today.why)}），照規則下一個交易日開盤賣出。</div>`
+      ? `<div class="today sell"><div class="t">照這個方法，${name} 最新狀況（${date} ${r.P.intraday ? '這根 K 棒' : ''}收盤）</div>${held}<br>⚠ <b>今天出現賣出訊號</b>（${esc(r.today.why)}），照規則下一個交易日開盤賣出。</div>`
       : `<div class="today"><div class="t">照這個方法，${name} 最新狀況（${date} 收盤）</div>${held}<br>今天沒有出現賣出訊號，照規則<b>續抱</b>。</div>`;
   }
   return r.today && r.today.buy
@@ -570,8 +604,15 @@ function compareMethods(P, code) {
 
 async function runSingle() {
   const code = S.code; if (!code) throw new Error('請先選一檔股票');
-  const P = await loadPx(code), r = backtest(P, cfg(), code.startsWith('00'));
-  LAST = r; SEL = null; KC = null;
+  let P, fellBack = false;
+  try { P = await loadSeries(code, S.tf); }
+  catch (e) {
+    if (S.tf === 'D') throw e;
+    S.tf = 'D'; $('tf').value = 'D'; tfUi(); save(); fellBack = true;     // 沒有分 K 就自動改用日 K
+    P = await loadSeries(code, 'D');
+  }
+  const r = backtest(P, cfg(), code.startsWith('00'));
+  LAST = r; CTF = S.tf; SEL = null; KC = null;
   const beat = r.ret - r.bh;
   const verdict = r.n === 0 && !r.open ? '這段期間沒有出現買進訊號，可以換個方法或放寬參數。'
     : beat >= 0 ? `這套規則在 ${esc(NAMES[code] || code)} 上<b class="up">贏過買進持有 ${(beat * 100).toFixed(1)} 個百分點</b>`
@@ -579,13 +620,15 @@ async function runSingle() {
   const mddNote = r.mdd > r.bhMdd ? (beat >= 0 ? '，而且最大回檔比較小（風險較低）' : '，但最大回檔比較小（風險較低）') : '';
   const curName = typeof S.tpl === 'number' ? TEMPLATES[S.tpl].name : typeof S.tpl === 'string' ? (loadMine()[+S.tpl.slice(1)] || {}).name : '自訂規則';
   const html = `${todayBox(r, code)}
-    <div class="verdict"><span class="hint" style="display:block;margin:0 0 4px">方法：${esc(curName || '自訂規則')}</span>${verdict}${r.n || r.open ? mddNote + '。' : ''}</div>
+    <div class="verdict"><span class="hint" style="display:block;margin:0 0 4px">方法：${esc(curName || '自訂規則')} ・ 回測週期：${TFNAME[S.tf]}${fellBack ? '（這檔沒有分 K 資料，已自動改用日 K）' : ''}</span>${verdict}${r.n || r.open ? mddNote + '。' : ''}</div>
     <section id="sec-px"><h2>買賣點</h2>
       <div class="lg" id="pxlg"></div>
+      <div class="tfbar" id="btf"></div>
       <div class="rng" id="rng"><button data-r="63">3 個月</button><button data-r="125">6 個月</button><button data-r="0">全部</button></div>
       <div class="kinfo" id="pxinfo"></div>
       <div id="px"></div>
-      <p class="hint" style="margin:4px 0 0">▲ 買進、▼ 賣出（隔天開盤成交價）；虛線紅色 = 這筆賺錢、綠色 = 賠錢。點一下圖出現十字線，按住拖曳看前後價格；左右滑動、兩指縮放。點下面交易明細的任一筆，圖會跳到那一筆。</p></section>
+      <div class="hint" id="pxnote" style="margin:2px 0 0;color:var(--warn)"></div>
+      <p class="hint" style="margin:4px 0 0">▲ 買進、▼ 賣出（下一根 K 棒開盤成交）；上方按鈕可切換 K 線週期，買賣點會標在對應的 K 棒上；虛線紅色 = 這筆賺錢、綠色 = 賠錢。點一下圖出現十字線，按住拖曳看前後價格；左右滑動、兩指縮放。點下面交易明細的任一筆，圖會跳到那一筆。</p></section>
     <div class="stats">
       ${statBox('策略總報酬', pct(r.ret), `${money(r.final)} 元`, cls(r.ret))}
       ${statBox('買進持有', pct(r.bh), '同期間一直抱著', cls(r.bh))}
@@ -594,7 +637,7 @@ async function runSingle() {
       ${statBox('勝率', r.win == null ? '—' : (r.win * 100).toFixed(0) + '%', `${r.n} 筆交易`)}
       ${statBox('獲利因子', r.pf == null ? '—' : r.pf === Infinity ? '∞' : r.pf.toFixed(2), '總獲利 ÷ 總虧損，>1 才賺')}
       ${statBox('平均每筆', pct(r.avg), '已扣手續費與稅', cls(r.avg))}
-      ${statBox('平均持有', r.avgDays == null ? '—' : r.avgDays.toFixed(0) + ' 天', '')}
+      ${statBox('平均持有', r.avgDays == null ? '—' : r.avgDays.toFixed(0) + ' ' + unitTxt() + (S.tf === 'D' ? '' : ' K 棒'), '')}
       ${statBox('持股時間', (r.exposure * 100).toFixed(0) + '%', '有持股的天數比例')}
     </div>
     <section><h2>交易明細</h2><p class="hint" style="margin:0 0 6px">每筆顯示日期、成交價和原因。點一筆看它在圖上的位置。</p>${tradeTable(r)}</section>
@@ -617,11 +660,11 @@ async function runSingle() {
 
 function tradeTable(r) {
   if (!r.trades.length && !r.open) return '<div class="empty">沒有交易</div>';
-  const md = (d) => d.slice(2).replace(/-/g, '/');
+  const md = (d) => fmtT(d, true);
   const rows = r.trades.map((t, k) => `<tr data-t="${k}"><td>${md(t.bd)}<br><small>${t.bp}</small><span class="why">${esc(t.bwhy || '')}</span></td>
       <td>${md(t.sd)}<br><small>${t.sp}</small><span class="why">${esc(t.why)}</span></td>
-      <td class="${cls(t.ret)}">${pct(t.ret)}</td><td>${t.days} 天</td></tr>`).reverse();
-  if (r.open) rows.unshift(`<tr data-t="-1"><td>${md(r.open.bd)}<br><small>${r.open.bp}</small><span class="why">${esc(r.open.bwhy || '')}</span></td><td>持有中</td><td class="${cls(r.open.ret)}">${pct(r.open.ret)}</td><td>${r.open.days} 天</td></tr>`);
+      <td class="${cls(t.ret)}">${pct(t.ret)}</td><td>${t.days} ${unitTxt()}</td></tr>`).reverse();
+  if (r.open) rows.unshift(`<tr data-t="-1"><td>${md(r.open.bd)}<br><small>${r.open.bp}</small><span class="why">${esc(r.open.bwhy || '')}</span></td><td>持有中</td><td class="${cls(r.open.ret)}">${pct(r.open.ret)}</td><td>${r.open.days} ${unitTxt()}</td></tr>`);
   return `<div class="tscroll"><table class="trades"><tr><th>買進</th><th>賣出</th><th>報酬</th><th>持有</th></tr>${rows.join('')}</table></div>`;
 }
 
@@ -631,7 +674,7 @@ function chartBase() {
   const mobile = matchMedia('(max-width: 640px)').matches;
   const font = { family: '-apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif', color: C.muted, size: mobile ? 11 : 12 };
   const xaxis = (x) => { const step = Math.ceil(x.length / (mobile ? 4 : 7)), tv = x.filter((_, i) => i % step === Math.floor(step / 2));
-    return { type: 'category', tickvals: tv, ticktext: tv.map(d => x.length > 140 ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/')),
+    return { type: 'category', tickvals: tv, ticktext: tv.map(d => d.includes(' ') ? d.slice(0, 5) : x.length > 140 ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/')),
              tickangle: 0, showgrid: false, fixedrange: true, tickfont: font, linecolor: C.grid, rangeslider: { visible: false } }; };
   const base = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font, showlegend: false, dragmode: false, hovermode: 'closest',
     margin: mobile ? { l: 2, r: 6, t: 6, b: 24 } : { l: 6, r: 10, t: 8, b: 28 },
@@ -657,35 +700,77 @@ function overlays(r, C) {
   return out;
 }
 
-let KC = null;
-function drawPx() {
+let KC = null, CTF = 'D';
+// 找出「開始時間 ≤ t」的最後一根 K 棒
+function barAt(starts, t) {
+  let lo = 0, hi = starts.length - 1, ans = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (starts[m] <= t) { ans = m; lo = m + 1; } else hi = m - 1; }
+  return ans;
+}
+async function chartBars(tf) {
+  const r = LAST;
+  if (tf === S.tf) return r.P.d.map((d, i) => ({ time: d, open: r.P.o[i], high: r.P.h[i], low: r.P.l[i], close: r.P.c[i], volume: r.P.v[i] }));
+  if ('DWM'.includes(tf)) { const d = KChart.fromDaily(await loadPx(S.code)); return tf === 'D' ? d : KChart.aggPeriod(d, tf); }
+  const ix = await loadIx(S.code); if (!ix) return [];
+  return tf === '1' ? KChart.fromIntraday(ix.m1) : tf === '5' ? KChart.fromIntraday(ix.m5) : KChart.aggMinutes(KChart.fromIntraday(ix.m5), +tf);
+}
+async function drawPx() {
   const r = LAST; if (!r) return;
-  const { C } = chartBase(), I = r.I, P = r.P, N = I.n;
-  document.querySelectorAll('#rng button').forEach(b => b.classList.toggle('on', +b.dataset.r === RANGE && SEL == null));
+  const { C } = chartBase(), P = r.P, N = r.I.n, mobile = matchMedia('(max-width: 640px)').matches;
   if (!window.LightweightCharts || !window.KChart) { $('px').textContent = 'K 線圖元件載入失敗，請重新整理。'; return; }
-  if (!KC || !document.body.contains(KC.el)) {
-    KC = KChart.create($('px'), { info: $('pxinfo'), mas: [] }); KC.el = $('px');
-    KC.setBars(KChart.fromDaily(P), { intraday: false });
-    const ov = overlays(r, C);
-    $('pxlg').innerHTML = `<span><i style="background:var(--up)"></i>K 線</span>` + ov.map(o => `<span><i class="${o.dash ? 'dot' : ''}" style="${o.dash ? 'border-color' : 'background'}:${o.color}"></i>${esc(o.name)}</span>`).join('');
+  const hasIx = !!(await loadIx(S.code));
+  $('btf').innerHTML = KChart.TF.map(([k, t]) => `<button data-tf="${k}" class="${k === CTF ? 'on' : ''}" ${!hasIx && !'DWM'.includes(k) ? 'disabled' : ''}>${t}</button>`).join('');
+  $('btf').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { CTF = b.dataset.tf; SEL = null; drawPx(); }));
+  $('rng').hidden = !(CTF === 'D' && S.tf === 'D');
+  document.querySelectorAll('#rng button').forEach(b => b.classList.toggle('on', +b.dataset.r === RANGE && SEL == null));
+  if (!KC || !document.body.contains(KC.el)) { KC = KChart.create($('px'), { info: $('pxinfo'), mas: [] }); KC.el = $('px'); KC._tf = null; }
+  if (KC._tf !== CTF) {
+    const bars = await chartBars(CTF);
+    KC.setBars(bars, { intraday: !'DWM'.includes(CTF) }); KC._tf = CTF;
+    KC._starts = bars.map(b => tsec(b.time));
+    // 規則用到的均線等指標，只在「圖的週期 = 回測週期」時畫
+    const ov = CTF === S.tf ? overlays(r, C) : [];
+    $('pxlg').innerHTML = `<span><i style="background:var(--up)"></i>K 線（${KChart.TF.find(x => x[0] === CTF)[1]}）</span>` + ov.map(o => `<span><i class="${o.dash ? 'dot' : ''}" style="${o.dash ? 'border-color' : 'background'}:${o.color}"></i>${esc(o.name)}</span>`).join('')
+      + (CTF !== S.tf ? `<span>（回測用 ${TFNAME[S.tf]}，買賣點標在這個週期對應的 K 棒）</span>` : '');
     KC.setLines(ov.map(o => ({ name: o.name, color: o.color, dash: !!o.dash, data: o.y.map((v, i) => ({ time: P.d[i], value: v })) })));
   }
+  const bars = KC.bars, starts = KC._starts;
+  const at = (i) => { if (i == null || !bars.length) return null; const t = tsec(P.d[i]), k = barAt(starts, t);
+    if (k < 0) return null;
+    if (k === bars.length - 1 && t - starts[k] > 40 * 86400) return null;
+    return bars[k].time; };
   const all = r.trades.map((t, k) => ({ ...t, k })).concat(r.open ? [{ bi: r.open.bi, bp: r.open.bp, si: null, k: -1, ret: r.open.ret, bwhy: r.open.bwhy }] : []);
-  const marks = [];
+  const TFMIN = { 1: 1, 5: 5, 15: 15, 30: 30, 60: 60, D: 1440, W: 10080, M: 43200 };
+  const coarse = TFMIN[CTF] > TFMIN[S.tf];       // 圖的週期比回測週期粗：同一根 K 棒可能有很多筆交易
+  const marks = [], segs = [];
+  let outside = 0;
   for (const t of all) {
-    marks.push({ time: P.d[t.bi], position: 'belowBar', shape: 'arrowUp', color: C.up, text: '買', size: t.k === SEL ? 2 : 1 });
-    if (t.si != null) marks.push({ time: P.d[t.si], position: 'aboveBar', shape: 'arrowDown', color: C.down, text: `賣 ${pct(t.ret, 0)}`, size: t.k === SEL ? 2 : 1 });
+    const tb = at(t.bi), ts = t.si != null ? at(t.si) : null;
+    if (tb == null || (t.si != null && ts == null)) outside++;
+    if (tb != null) marks.push({ time: tb, position: 'belowBar', shape: 'arrowUp', color: C.up, text: '買', size: t.k === SEL ? 2 : 1 });
+    if (ts != null) marks.push({ time: ts, position: 'aboveBar', shape: 'arrowDown', color: C.down, text: `賣 ${pct(t.ret, 0)}`, size: t.k === SEL ? 2 : 1 });
+    if (!coarse && tb != null && ts != null && KC.indexOf(tb) !== KC.indexOf(ts))
+      segs.push({ t0: tb, v0: t.bp, t1: ts, v1: t.sp, color: t.ret >= 0 ? C.up : C.down, width: t.k === SEL ? 3 : 2 });
   }
-  KC.setMarkers(marks);
-  KC.setSegments(all.filter(t => t.si != null).map(t => ({ t0: P.d[t.bi], v0: t.bp, t1: P.d[t.si], v1: t.sp, color: t.ret >= 0 ? C.up : C.down, width: t.k === SEL ? 3 : 2 })));
+  // 同一根 K 棒上有多個標記時，合併文字
+  const merged = {};
+  for (const m of marks) {
+    const k = KChart.tkey(m.time) + m.position;
+    if (merged[k]) { merged[k].n++; merged[k].text = (m.position === 'belowBar' ? '買' : '賣') + '×' + merged[k].n; }
+    else merged[k] = Object.assign({ n: 1 }, m);
+  }
+  KC.setMarkers(Object.values(merged)); KC.setSegments(segs);
   if (SEL != null) {
     const t = SEL === -1 ? { bi: r.open.bi, si: N - 1 } : r.trades[SEL];
-    KC.focus(P.d[t.bi], P.d[t.si], 20);
-  } else KC.showLast(RANGE ? RANGE : N - r.start);
+    const a = at(t.bi) ?? bars[0].time, b2 = at(t.si) ?? bars[bars.length - 1].time;
+    KC.focus(a, b2, CTF === S.tf ? 20 : 40);
+  } else if (CTF === 'D' && S.tf === 'D') KC.showLast(RANGE ? RANGE : N - r.start);
+  else KC.showLast(CTF === S.tf ? Math.min(N - r.start, mobile ? 90 : 180) : (mobile ? 90 : 180));
+  $('pxnote').textContent = outside ? `有 ${outside} 筆交易不在這個週期的資料範圍內（分 K 只有最近 60 天，1 分 K 只有最近 5 天），切回日 K 可以看全部。` : '';
 }
 
 function drawEq(r) {
-  const { C, xaxis, base, cfg } = chartBase(), x = r.dates, cap = r.equity[0];
+  const { C, xaxis, base, cfg } = chartBase(), x = r.dates.map(d => typeof d === 'number' ? fmtT(d) : d), cap = r.equity[0];
   Plotly.react('eq', [
     { type: 'scatter', mode: 'lines', x, y: r.equity.map(e => (e / cap - 1) * 100), line: { color: C.accent, width: 2 }, hovertemplate: '規則 %{y:+.1f}%<extra></extra>' },
     { type: 'scatter', mode: 'lines', x, y: r.bhEq.map(e => (e / cap - 1) * 100), line: { color: C.muted, width: 1.5, dash: 'dot' }, hovertemplate: '持有 %{y:+.1f}%<extra></extra>' },
@@ -695,19 +780,19 @@ function drawEq(r) {
 async function runMulti() {
   const codes = multiCodes();
   if (!codes.length) throw new Error('請先選擇要比較的股票');
-  const c = cfg(), out = [];
+  const c = cfg(), out = []; let skipped = 0;
   for (let k = 0; k < codes.length; k++) {
     $('run').textContent = `計算中…（${k + 1}/${codes.length}）`;
-    try { const P = await loadPx(codes[k]); out.push({ code: codes[k], r: backtest(P, c, codes[k].startsWith('00')) }); } catch (e) {}
+    try { const P = await loadSeries(codes[k], S.tf); out.push({ code: codes[k], r: backtest(P, c, codes[k].startsWith('00')) }); } catch (e) { skipped++; }
   }
-  if (!out.length) throw new Error('這些股票都沒有資料');
+  if (!out.length) throw new Error(S.tf === 'D' ? '這些股票都沒有資料' : '這些股票都沒有分 K 資料，請改用日 K 或選熱門股');
   const avg = (f) => out.reduce((s, o) => s + f(o.r), 0) / out.length;
   const beat = out.filter(o => o.r.ret > o.r.bh).length, profit = out.filter(o => o.r.ret > 0).length;
   out.sort((a, b) => b.r.ret - a.r.ret);
   const rows = out.map(o => `<tr><td><a href="?code=${encodeURIComponent(o.code)}" data-code="${esc(o.code)}">${esc(o.code)} ${esc(NAMES[o.code] || '')}</a></td>
       <td class="${cls(o.r.ret)}">${pct(o.r.ret)}</td><td class="${cls(o.r.bh)}">${pct(o.r.bh)}</td><td>${o.r.n}</td>
       <td>${o.r.win == null ? '—' : (o.r.win * 100).toFixed(0) + '%'}</td><td class="down">${pct(o.r.mdd)}</td></tr>`).join('');
-  $('results').innerHTML = `<div class="verdict">在 ${out.length} 檔股票中，這套規則<b>${beat} 檔贏過買進持有</b>（${(beat / out.length * 100).toFixed(0)}%），${profit} 檔有賺錢。
+  $('results').innerHTML = `<div class="verdict"><span class="hint" style="display:block;margin:0 0 4px">回測週期：${TFNAME[S.tf]}${skipped ? `（${skipped} 檔沒有資料，已略過）` : ''}</span>在 ${out.length} 檔股票中，這套規則<b>${beat} 檔贏過買進持有</b>（${(beat / out.length * 100).toFixed(0)}%），${profit} 檔有賺錢。
       ${beat / out.length >= 0.5 ? '表現算穩定。' : '多數股票不如一直抱著，規則可能只適合特定股票或行情。'}</div>
     <div class="stats">
       ${statBox('平均報酬', pct(avg(r => r.ret)), '', cls(avg(r => r.ret)))}
